@@ -31,7 +31,7 @@ SECRET_KEY = 'django-insecure-)1l!)we(fn4tq6whi)(fhlwdzk5c2d8fdy$sbb)37i28+!^y7e
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['localhost', os.getenv('APP_URL', '*')]
 
 db = urlparse(os.getenv("DATABASE_URL"))
 
@@ -136,17 +136,24 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
+
+# Directorios donde buscar archivos estáticos
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
     BASE_DIR / 'dashboard' / 'templates',
 ]
+
+# Directorio donde se recopilarán los archivos estáticos para producción
 STATIC_ROOT = BASE_DIR / 'collected_static'
 
-# Template settings
+# Configuración de buscadores de archivos estáticos
 STATICFILES_FINDERS = [
     'django.contrib.staticfiles.finders.FileSystemFinder',
     'django.contrib.staticfiles.finders.AppDirectoriesFinder',
 ]
+
+# Storage para archivos estáticos (importante para el admin)
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
