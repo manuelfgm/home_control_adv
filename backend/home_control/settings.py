@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from urllib.parse import urlparse, parse_qsl
 
 # Load environment variables
 load_dotenv()
@@ -30,7 +31,9 @@ SECRET_KEY = 'django-insecure-)1l!)we(fn4tq6whi)(fhlwdzk5c2d8fdy$sbb)37i28+!^y7e
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
+
+db = urlparse(os.getenv("DATABASE_URL"))
 
 
 # Application definition
@@ -86,11 +89,15 @@ WSGI_APPLICATION = 'home_control.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': db.path.replace('/', ''),
+        'USER': db.username,
+        'PASSWORD': db.password,
+        'HOST': db.hostname,
+        'PORT': 5432,
+        'OPTIONS': dict(parse_qsl(db.query)),
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
