@@ -163,7 +163,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -184,3 +188,11 @@ MQTT_KEEPALIVE = int(os.getenv('MQTT_KEEPALIVE', 60))
 # MQTT Topics
 MQTT_TOPIC_SENSOR = os.getenv('MQTT_TOPIC_SENSOR', 'home/room/status')
 MQTT_TOPIC_HEATING = os.getenv('MQTT_TOPIC_HEATING', 'home/heating/control')
+
+# Script authentication key for future API access
+MQTT_SCRIPT_KEY = os.getenv('MQTT_SCRIPT_KEY', 'change_this_secret_key_in_production')
+
+# Authentication settings
+LOGIN_URL = '/admin/login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/admin/login/'

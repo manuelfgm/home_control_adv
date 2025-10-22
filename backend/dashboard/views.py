@@ -1,15 +1,19 @@
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.generic import TemplateView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.decorators import login_required
+from django.utils.decorators import method_decorator
 from sensors.models import SensorReading, SensorStatus
 from heating.models import HeatingControl, HeatingSchedule, HeatingLog
 from datetime import timedelta
 from django.utils import timezone
 
 
-class DashboardView(TemplateView):
-    """Vista principal del dashboard"""
+class DashboardView(LoginRequiredMixin, TemplateView):
+    """Vista principal del dashboard - Requiere autenticación"""
     template_name = 'dashboard/index.html'
+    login_url = '/admin/login/'  # Redirigir al login del admin
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -26,14 +30,16 @@ class DashboardView(TemplateView):
         return context
 
 
-class SchedulesView(TemplateView):
-    """Vista para configuración de horarios"""
+class SchedulesView(LoginRequiredMixin, TemplateView):
+    """Vista para configuración de horarios - Requiere autenticación"""
     template_name = 'dashboard/schedules.html'
+    login_url = '/admin/login/'
 
 
-class HistoryView(TemplateView):
-    """Vista para histórico de datos"""
+class HistoryView(LoginRequiredMixin, TemplateView):
+    """Vista para histórico de datos - Requiere autenticación"""
     template_name = 'dashboard/history.html'
+    login_url = '/admin/login/'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -53,9 +59,10 @@ class HistoryView(TemplateView):
         return context
 
 
-class ControlView(TemplateView):
-    """Vista para control manual"""
+class ControlView(LoginRequiredMixin, TemplateView):
+    """Vista para control manual - Requiere autenticación"""
     template_name = 'dashboard/control.html'
+    login_url = '/admin/login/'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -71,8 +78,9 @@ class ControlView(TemplateView):
         return context
 
 
+@login_required(login_url='/admin/login/')
 def dashboard_api_status(request):
-    """API endpoint para obtener estado general del sistema"""
+    """API endpoint para obtener estado general del sistema - Requiere autenticación"""
     try:
         # Estado de sensores
         sensors = SensorStatus.objects.filter(is_active=True)
