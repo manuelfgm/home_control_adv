@@ -1,0 +1,455 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}Dashboard - Control de Calefacción{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Estado actual -->
+    <div class="col-md-3 mb-4">
+        <div class="card card-stat h-100" id="current-temp-card">
+            <div class="card-body text-center">
+                <i class="fas fa-thermometer-half fa-2x mb-3 text-primary"></i>
+                <h5 class="card-title">Temperatura Actual</h5>
+                <div class="temperature-display" id="current-temp">--°C</div>
+                <p class="text-muted" id="temp-timestamp">Cargando...</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card card-stat h-100" id="heating-status-card">
+            <div class="card-body text-center">
+                <i class="fas fa-fire fa-2x mb-3"></i>
+                <h5 class="card-title">Estado Calefacción</h5>
+                <div class="h4" id="heating-status">Cargando...</div>
+                <p class="text-muted" id="heating-mode">--</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card card-stat h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-tint fa-2x mb-3 text-info"></i>
+                <h5 class="card-title">Humedad</h5>
+                <div class="h4" id="current-humidity">--%</div>
+                <p class="text-muted" id="humidity-timestamp">--</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card card-stat h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-clock fa-2x mb-3 text-warning"></i>
+                <h5 class="card-title">Próximo Horario</h5>
+                <div class="h6" id="next-schedule">--</div>
+                <p class="text-muted" id="next-schedule-temp">--</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráficos -->
+<div class="row">
+    <div class="col-md-8 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Temperatura (últimas 24 horas)</h5>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-primary" onclick="updateChart(1)">1H</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="updateChart(6)">6H</button>
+                    <button type="button" class="btn btn-primary" onclick="updateChart(24)">24H</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="updateChart(168)">7D</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <canvas id="temperatureChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Control Manual</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-success" onclick="manualOverride(true)">
+                        <i class="fas fa-fire"></i> Encender Calefacción
+                    </button>
+                    <button type="button" class="btn btn-danger" onclick="manualOverride(false)">
+                        <i class="fas fa-snowflake"></i> Apagar Calefacción
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="clearOverride()">
+                        <i class="fas fa-robot"></i> Modo Automático
+                    </button>
+                </div>
+                <hr>
+                <div class="mb-3">
+                    <label for="override-duration" class="form-label">Duración (horas)</label>
+                    <select class="form-select" id="override-duration">
+                        <option value="">Indefinido</option>
+                        <option value="1">1 hora</option>
+                        <option value="2">2 horas</option>
+                        <option value="4">4 horas</option>
+                        <option value="8">8 horas</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Estado de sensores -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">Estado de Sensores</h5>
+            </div>
+            <div class="card-body" id="sensors-status">
+                <p class="text-muted">Cargando...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Actividad reciente -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Actividad Reciente</h5>
+            </div>
+            <div class="card-body">
+                <div id="recent-activity">
+                    <p class="text-muted">Cargando actividad...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let temperatureChart;
+let refreshInterval;
+
+// Inicializar dashboard
+document.addEventListener('DOMContentLoaded', function() {
+    initializeChart();
+    loadDashboardData();
+    
+    // Actualizar cada 30 segundos
+    refreshInterval = setInterval(loadDashboardData, 30000);
+});
+
+function initializeChart() {
+    const ctx = document.getElementById('temperatureChart').getContext('2d');
+    temperatureChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Temperatura (°C)',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                tension: 0.1,
+                fill: true
+            }, {
+                label: 'Objetivo (°C)',
+                data: [],
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                borderDash: [5, 5],
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    title: {
+                        display: true,
+                        text: 'Temperatura (°C)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Tiempo'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true
+                }
+            }
+        }
+    });
+}
+
+async function loadDashboardData() {
+    showLoading();
+    
+    try {
+        // Cargar datos de sensores
+        await loadSensorData();
+        
+        // Cargar estado de calefacción
+        await loadHeatingStatus();
+        
+        // Cargar estado de sensores
+        await loadSensorsStatus();
+        
+        // Cargar actividad reciente
+        await loadRecentActivity();
+        
+        updateTimestamps();
+    } catch (error) {
+        console.error('Error cargando datos del dashboard:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function loadSensorData() {
+    try {
+        const response = await fetch('/sensors/api/readings/latest/');
+        const data = await response.json();
+        
+        if (data.room_sensor) {
+            const temp = data.room_sensor.temperature;
+            const humidity = data.room_sensor.humidity;
+            
+            if (temp) {
+                document.getElementById('current-temp').textContent = `${temp.value}°C`;
+                document.getElementById('temp-timestamp').textContent = 
+                    new Date(temp.timestamp).toLocaleString('es-ES');
+            }
+            
+            if (humidity) {
+                document.getElementById('current-humidity').textContent = `${humidity.value}%`;
+                document.getElementById('humidity-timestamp').textContent = 
+                    new Date(humidity.timestamp).toLocaleString('es-ES');
+            }
+        }
+    } catch (error) {
+        console.error('Error cargando datos de sensores:', error);
+    }
+}
+
+async function loadHeatingStatus() {
+    try {
+        const response = await fetch('/heating/api/control/');
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            const control = data.results[0];
+            const statusElement = document.getElementById('heating-status');
+            const modeElement = document.getElementById('heating-mode');
+            const card = document.getElementById('heating-status-card');
+            
+            if (control.is_heating) {
+                statusElement.textContent = 'ENCENDIDA';
+                statusElement.className = 'h4 text-white';
+                card.className = 'card card-stat h-100 heating-on';
+            } else {
+                statusElement.textContent = 'APAGADA';
+                statusElement.className = 'h4 text-white';
+                card.className = 'card card-stat h-100 heating-off';
+            }
+            
+            modeElement.textContent = control.status_display;
+            
+            if (control.is_manual_override_active) {
+                modeElement.textContent += ' (Manual)';
+            }
+        }
+    } catch (error) {
+        console.error('Error cargando estado de calefacción:', error);
+    }
+}
+
+async function loadSensorsStatus() {
+    try {
+        const response = await fetch('/sensors/api/status/');
+        const data = await response.json();
+        const container = document.getElementById('sensors-status');
+        
+        if (data.results && data.results.length > 0) {
+            let html = '';
+            data.results.forEach(sensor => {
+                const statusClass = sensor.is_online ? 'status-online' : 'status-offline';
+                const statusIcon = sensor.is_online ? 'fa-check-circle' : 'fa-times-circle';
+                
+                html += `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>${sensor.name}</span>
+                        <span class="${statusClass}">
+                            <i class="fas ${statusIcon}"></i>
+                            ${sensor.is_online ? 'Online' : 'Offline'}
+                        </span>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+    } catch (error) {
+        console.error('Error cargando estado de sensores:', error);
+    }
+}
+
+async function loadRecentActivity() {
+    try {
+        const response = await fetch('/heating/api/logs/?limit=5');
+        const data = await response.json();
+        const container = document.getElementById('recent-activity');
+        
+        if (data.results && data.results.length > 0) {
+            let html = '<div class="list-group list-group-flush">';
+            data.results.forEach(log => {
+                const time = new Date(log.timestamp).toLocaleString('es-ES');
+                html += `
+                    <div class="list-group-item d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${log.action_display}</strong>
+                            <p class="mb-1">${log.reason || 'Sin descripción'}</p>
+                            <small class="text-muted">${time}</small>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+    } catch (error) {
+        console.error('Error cargando actividad reciente:', error);
+    }
+}
+
+async function updateChart(hours = 24) {
+    try {
+        const now = new Date();
+        const start = new Date(now.getTime() - (hours * 60 * 60 * 1000));
+        
+        const params = new URLSearchParams({
+            sensor_type: 'temperature',
+            start_date: start.toISOString(),
+            end_date: now.toISOString()
+        });
+        
+        const response = await fetch(`/sensors/api/readings/?${params}`);
+        const data = await response.json();
+        
+        if (data.results) {
+            const labels = [];
+            const temps = [];
+            
+            data.results.reverse().forEach(reading => {
+                const date = new Date(reading.timestamp);
+                labels.push(date.toLocaleTimeString('es-ES', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                }));
+                temps.push(reading.value);
+            });
+            
+            temperatureChart.data.labels = labels;
+            temperatureChart.data.datasets[0].data = temps;
+            temperatureChart.update();
+        }
+    } catch (error) {
+        console.error('Error actualizando gráfico:', error);
+    }
+}
+
+async function manualOverride(turnOn) {
+    const duration = document.getElementById('override-duration').value;
+    const data = { turn_on: turnOn };
+    
+    if (duration) {
+        data.duration_hours = parseInt(duration);
+    }
+    
+    try {
+        const response = await fetch('/heating/api/control/1/manual_override/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            loadDashboardData();
+            showAlert('success', `Calefacción ${turnOn ? 'encendida' : 'apagada'} manualmente`);
+        } else {
+            showAlert('error', 'Error en el control manual');
+        }
+    } catch (error) {
+        console.error('Error en control manual:', error);
+        showAlert('error', 'Error de conexión');
+    }
+}
+
+async function clearOverride() {
+    try {
+        const response = await fetch('/heating/api/control/1/clear_override/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        if (response.ok) {
+            loadDashboardData();
+            showAlert('success', 'Modo automático activado');
+        } else {
+            showAlert('error', 'Error activando modo automático');
+        }
+    } catch (error) {
+        console.error('Error limpiando override:', error);
+        showAlert('error', 'Error de conexión');
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showAlert(type, message) {
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const alert = document.createElement('div');
+    alert.className = `alert ${alertClass} alert-dismissible fade show`;
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.querySelector('main').insertBefore(alert, document.querySelector('main').firstChild);
+    
+    // Auto dismiss after 5 seconds
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}

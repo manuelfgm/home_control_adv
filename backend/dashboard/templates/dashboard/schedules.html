@@ -1,0 +1,366 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}Horarios - Control de Calefacción{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Configuración de Horarios</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#scheduleModal">
+        <i class="fas fa-plus"></i> Nuevo Horario
+    </button>
+</div>
+
+<!-- Resumen semanal -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Vista Semanal</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Hora</th>
+                                <th>Lunes</th>
+                                <th>Martes</th>
+                                <th>Miércoles</th>
+                                <th>Jueves</th>
+                                <th>Viernes</th>
+                                <th>Sábado</th>
+                                <th>Domingo</th>
+                            </tr>
+                        </thead>
+                        <tbody id="weekly-schedule">
+                            <!-- Se llena con JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista de horarios -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Todos los Horarios</h5>
+            </div>
+            <div class="card-body">
+                <div id="schedules-list">
+                    <p class="text-muted">Cargando horarios...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para crear/editar horario -->
+<div class="modal fade" id="scheduleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scheduleModalTitle">Nuevo Horario</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="scheduleForm">
+                    <div class="mb-3">
+                        <label for="scheduleName" class="form-label">Nombre</label>
+                        <input type="text" class="form-control" id="scheduleName" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="scheduleDay" class="form-label">Día de la semana</label>
+                        <select class="form-select" id="scheduleDay" required>
+                            <option value="0">Lunes</option>
+                            <option value="1">Martes</option>
+                            <option value="2">Miércoles</option>
+                            <option value="3">Jueves</option>
+                            <option value="4">Viernes</option>
+                            <option value="5">Sábado</option>
+                            <option value="6">Domingo</option>
+                        </select>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="startTime" class="form-label">Hora de inicio</label>
+                                <input type="time" class="form-control" id="startTime" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="endTime" class="form-label">Hora de fin</label>
+                                <input type="time" class="form-control" id="endTime" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="targetTemp" class="form-label">Temperatura objetivo (°C)</label>
+                        <input type="number" class="form-control" id="targetTemp" min="5" max="35" step="0.5" required>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="isActive" checked>
+                        <label class="form-check-label" for="isActive">
+                            Horario activo
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="saveSchedule()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentScheduleId = null;
+let schedules = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadSchedules();
+});
+
+async function loadSchedules() {
+    try {
+        const response = await fetch('/heating/api/schedules/');
+        const data = await response.json();
+        schedules = data.results || [];
+        
+        renderSchedulesList();
+        renderWeeklyView();
+    } catch (error) {
+        console.error('Error cargando horarios:', error);
+    }
+}
+
+function renderSchedulesList() {
+    const container = document.getElementById('schedules-list');
+    
+    if (schedules.length === 0) {
+        container.innerHTML = '<p class="text-muted">No hay horarios configurados.</p>';
+        return;
+    }
+    
+    let html = '<div class="list-group">';
+    schedules.forEach(schedule => {
+        const statusBadge = schedule.is_active ? 
+            '<span class="badge bg-success">Activo</span>' : 
+            '<span class="badge bg-secondary">Inactivo</span>';
+        
+        html += `
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-1">${schedule.name} ${statusBadge}</h6>
+                    <p class="mb-1">
+                        <strong>${schedule.day_of_week_display}</strong> - 
+                        ${schedule.start_time} a ${schedule.end_time}
+                    </p>
+                    <small class="text-muted">Objetivo: ${schedule.target_temperature}°C</small>
+                </div>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-primary btn-sm" 
+                            onclick="editSchedule(${schedule.id})">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" 
+                            onclick="deleteSchedule(${schedule.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function renderWeeklyView() {
+    const tbody = document.getElementById('weekly-schedule');
+    const hours = [];
+    
+    // Generar horas (6:00 a 23:00)
+    for (let h = 6; h <= 23; h++) {
+        hours.push(h.toString().padStart(2, '0') + ':00');
+    }
+    
+    let html = '';
+    hours.forEach(hour => {
+        html += `<tr><td><strong>${hour}</strong></td>`;
+        
+        // Para cada día de la semana
+        for (let day = 0; day < 7; day++) {
+            const scheduleForHour = findScheduleForDayAndHour(day, hour);
+            let cellContent = '';
+            let cellClass = '';
+            
+            if (scheduleForHour) {
+                cellContent = `${scheduleForHour.target_temperature}°C`;
+                cellClass = 'table-warning';
+            }
+            
+            html += `<td class="${cellClass}">${cellContent}</td>`;
+        }
+        html += '</tr>';
+    });
+    
+    tbody.innerHTML = html;
+}
+
+function findScheduleForDayAndHour(day, hour) {
+    return schedules.find(schedule => {
+        if (schedule.day_of_week !== day || !schedule.is_active) {
+            return false;
+        }
+        
+        const startTime = schedule.start_time.substring(0, 5);
+        const endTime = schedule.end_time.substring(0, 5);
+        
+        return hour >= startTime && hour <= endTime;
+    });
+}
+
+function editSchedule(id) {
+    const schedule = schedules.find(s => s.id === id);
+    if (!schedule) return;
+    
+    currentScheduleId = id;
+    
+    document.getElementById('scheduleModalTitle').textContent = 'Editar Horario';
+    document.getElementById('scheduleName').value = schedule.name;
+    document.getElementById('scheduleDay').value = schedule.day_of_week;
+    document.getElementById('startTime').value = schedule.start_time;
+    document.getElementById('endTime').value = schedule.end_time;
+    document.getElementById('targetTemp').value = schedule.target_temperature;
+    document.getElementById('isActive').checked = schedule.is_active;
+    
+    new bootstrap.Modal(document.getElementById('scheduleModal')).show();
+}
+
+async function deleteSchedule(id) {
+    if (!confirm('¿Estás seguro de que quieres eliminar este horario?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/heating/api/schedules/${id}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        if (response.ok) {
+            loadSchedules();
+            showAlert('success', 'Horario eliminado correctamente');
+        } else {
+            showAlert('error', 'Error eliminando horario');
+        }
+    } catch (error) {
+        console.error('Error eliminando horario:', error);
+        showAlert('error', 'Error de conexión');
+    }
+}
+
+async function saveSchedule() {
+    const form = document.getElementById('scheduleForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    const data = {
+        name: document.getElementById('scheduleName').value,
+        day_of_week: parseInt(document.getElementById('scheduleDay').value),
+        start_time: document.getElementById('startTime').value,
+        end_time: document.getElementById('endTime').value,
+        target_temperature: parseFloat(document.getElementById('targetTemp').value),
+        is_active: document.getElementById('isActive').checked
+    };
+    
+    try {
+        const url = currentScheduleId ? 
+            `/heating/api/schedules/${currentScheduleId}/` : 
+            '/heating/api/schedules/';
+        
+        const method = currentScheduleId ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('scheduleModal')).hide();
+            loadSchedules();
+            showAlert('success', currentScheduleId ? 'Horario actualizado' : 'Horario creado');
+            resetForm();
+        } else {
+            const errorData = await response.json();
+            showAlert('error', 'Error guardando horario: ' + JSON.stringify(errorData));
+        }
+    } catch (error) {
+        console.error('Error guardando horario:', error);
+        showAlert('error', 'Error de conexión');
+    }
+}
+
+function resetForm() {
+    currentScheduleId = null;
+    document.getElementById('scheduleModalTitle').textContent = 'Nuevo Horario';
+    document.getElementById('scheduleForm').reset();
+    document.getElementById('isActive').checked = true;
+}
+
+// Reset form cuando se cierra el modal
+document.getElementById('scheduleModal').addEventListener('hidden.bs.modal', resetForm);
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showAlert(type, message) {
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const alert = document.createElement('div');
+    alert.className = `alert ${alertClass} alert-dismissible fade show`;
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.querySelector('main').insertBefore(alert, document.querySelector('main').firstChild);
+    
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}

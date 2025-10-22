@@ -1,0 +1,21 @@
+// Archivo de configuración para Arduino - controller/config.h
+// Copia este archivo como "config.h" y actualiza con tus datos
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// Configuración WiFi
+const char* WIFI_ID = "TuNombreWiFi";
+const char* WIFI_PSSWD = "TuClaveWiFi";
+
+// Configuración MQTT Adafruit IO
+const char* MQTT_SERVER = "io.adafruit.com";
+const char* MQTT_USERNAME = "tu_usuario_adafruit";
+const char* MQTT_PASSWORD = "tu_clave_adafruit_io";
+const int MQTT_SERVER_PORT = 1883;
+
+// Configuración adicional
+const unsigned long DEEP_SLEEP_TIME = 10 * 60 * 1000000; // 10 minutos en microsegundos
+const int MAX_RETRIES = 3;
+
+#endif
