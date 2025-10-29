@@ -1,0 +1,356 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Control Manual - Control de Calefacción{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Estado Actual -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Estado Actual</h5>
+            </div>
+            <div class="card-body" id="current-status-container">
+                <!-- Se carga via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Control Manual Rápido -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-hand-paper"></i> Control Rápido</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-3">
+                    <button class="btn btn-success btn-lg" onclick="quickControl('turn_on', 60)">
+                        <i class="fas fa-play"></i> Encender 1 hora
+                    </button>
+                    <button class="btn btn-warning btn-lg" onclick="quickControl('turn_on', 30)">
+                        <i class="fas fa-play"></i> Encender 30 min
+                    </button>
+                    <button class="btn btn-danger btn-lg" onclick="quickControl('turn_off', 60)">
+                        <i class="fas fa-stop"></i> Apagar 1 hora
+                    </button>
+                    <button class="btn btn-info btn-lg" onclick="quickControl('clear_override')">
+                        <i class="fas fa-undo"></i> Modo Automático
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Control Avanzado -->
+    <div class="col-md-8 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cogs"></i> Control Avanzado</h5>
+            </div>
+            <div class="card-body">
+                <form id="advancedControlForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="controlAction" class="form-label">Acción</label>
+                            <select class="form-select" id="controlAction" onchange="toggleTemperatureInput()">
+                                <option value="turn_on">Encender</option>
+                                <option value="turn_off">Apagar</option>
+                                <option value="set_temperature">Establecer Temperatura</option>
+                                <option value="clear_override">Cancelar Override</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="controlDuration" class="form-label">Duración (minutos)</label>
+                            <input type="number" class="form-control" id="controlDuration" 
+                                   min="5" max="720" value="60" step="5">
+                            <div class="form-text">Entre 5 minutos y 12 horas</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row" id="temperatureRow" style="display: none;">
+                        <div class="col-md-6 mb-3">
+                            <label for="targetTemperature" class="form-label">Temperatura Objetivo (°C)</label>
+                            <input type="number" class="form-control" id="targetTemperature" 
+                                   min="15" max="30" step="0.5" value="20">
+                            <div class="form-text">Entre 15°C y 30°C</div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-primary btn-lg" onclick="executeAdvancedControl()">
+                            <i class="fas fa-play-circle"></i> Ejecutar Control
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Horario Activo -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-calendar-check"></i> Horario Activo</h5>
+            </div>
+            <div class="card-body" id="active-schedule-container">
+                <!-- Se carga via JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Historial de Comandos -->
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-history"></i> Historial de Comandos Recientes</h5>
+            </div>
+            <div class="card-body" id="command-history-container">
+                <!-- Se carga via JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let refreshInterval = null;
+
+    // Inicializar página
+    document.addEventListener('DOMContentLoaded', function() {
+        loadControlData();
+        
+        // Refrescar cada 15 segundos
+        refreshInterval = setInterval(loadControlData, 15000);
+    });
+
+    // Cargar datos de control
+    async function loadControlData() {
+        try {
+            const response = await fetch('/dashboard/api/status/', {
+                headers: defaultHeaders
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            renderCurrentStatus(data.heating);
+            renderActiveSchedule(data.current_schedule);
+            loadCommandHistory();
+            
+        } catch (error) {
+            console.error('Error loading control data:', error);
+            showError('current-status-container', error.message);
+        }
+    }
+
+    // Renderizar estado actual
+    function renderCurrentStatus(heating) {
+        const container = document.getElementById('current-status-container');
+        
+        if (!heating) {
+            container.innerHTML = '<p class="text-muted">No hay datos de calefacción disponibles</p>';
+            return;
+        }
+
+        const statusClass = heating.is_heating ? 'success' : 'secondary';
+        const statusIcon = heating.is_heating ? 'fa-fire' : 'fa-snowflake';
+        const statusText = heating.is_heating ? 'ENCENDIDA' : 'APAGADA';
+        
+        const overrideInfo = heating.is_manual_override 
+            ? '<div class="alert alert-warning mt-2"><i class="fas fa-hand-paper"></i> Control manual activo</div>'
+            : '<div class="alert alert-success mt-2"><i class="fas fa-robot"></i> Modo automático</div>';
+        
+        const html = `
+            <div class="text-center">
+                <div class="badge bg-${statusClass} fs-6 mb-3 p-3">
+                    <i class="fas ${statusIcon} me-2"></i>${statusText}
+                </div>
+                
+                <div class="row text-center mb-3">
+                    <div class="col-6">
+                        <div class="h4 text-primary">${heating.current_temperature || 'N/A'}°C</div>
+                        <small class="text-muted">Temperatura Actual</small>
+                    </div>
+                    <div class="col-6">
+                        <div class="h4 text-warning">${heating.target_temperature || 'N/A'}°C</div>
+                        <small class="text-muted">Temperatura Objetivo</small>
+                    </div>
+                </div>
+                
+                ${overrideInfo}
+                
+                <small class="text-muted">
+                    <i class="fas fa-clock"></i> Última actualización: ${timeAgo(heating.last_updated)}
+                </small>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+    }
+
+    // Renderizar horario activo
+    function renderActiveSchedule(schedule) {
+        const container = document.getElementById('active-schedule-container');
+        
+        if (!schedule) {
+            container.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="fas fa-moon fa-2x mb-2"></i>
+                    <p>No hay horario activo</p>
+                </div>
+            `;
+            return;
+        }
+
+        const html = `
+            <div class="text-center">
+                <h6 class="text-primary">${schedule.name}</h6>
+                <div class="mb-2">
+                    <i class="fas fa-clock"></i> ${schedule.start_time} - ${schedule.end_time}
+                </div>
+                <div class="h5 text-warning">
+                    <i class="fas fa-thermometer-half"></i> ${schedule.target_temperature}°C
+                </div>
+                <small class="text-muted">Horario programado activo</small>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+    }
+
+    // Control rápido
+    async function quickControl(action, duration = null) {
+        const requestData = { action: action };
+        
+        if (duration) {
+            requestData.duration_minutes = duration;
+        }
+        
+        await executeControl(requestData);
+    }
+
+    // Mostrar/ocultar campo de temperatura
+    function toggleTemperatureInput() {
+        const action = document.getElementById('controlAction').value;
+        const temperatureRow = document.getElementById('temperatureRow');
+        
+        if (action === 'set_temperature') {
+            temperatureRow.style.display = 'block';
+        } else {
+            temperatureRow.style.display = 'none';
+        }
+        
+        // Ajustar visibilidad de duración
+        const durationInput = document.getElementById('controlDuration').parentElement;
+        if (action === 'clear_override') {
+            durationInput.style.display = 'none';
+        } else {
+            durationInput.style.display = 'block';
+        }
+    }
+
+    // Control avanzado
+    async function executeAdvancedControl() {
+        const action = document.getElementById('controlAction').value;
+        const duration = parseInt(document.getElementById('controlDuration').value);
+        const temperature = parseFloat(document.getElementById('targetTemperature').value);
+        
+        const requestData = { action: action };
+        
+        if (action !== 'clear_override') {
+            requestData.duration_minutes = duration;
+        }
+        
+        if (action === 'set_temperature') {
+            requestData.temperature = temperature;
+        }
+        
+        await executeControl(requestData);
+    }
+
+    // Ejecutar control
+    async function executeControl(requestData) {
+        try {
+            const response = await fetch('/dashboard/api/manual-control/', {
+                method: 'POST',
+                headers: defaultHeaders,
+                body: JSON.stringify(requestData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showAlert(result.message, 'success');
+                
+                // Refrescar datos después de 2 segundos
+                setTimeout(loadControlData, 2000);
+            } else {
+                showAlert(result.error || 'Error en el control', 'danger');
+            }
+            
+        } catch (error) {
+            console.error('Error executing control:', error);
+            showAlert('Error al ejecutar el control', 'danger');
+        }
+    }
+
+    // Cargar historial de comandos (simulado)
+    function loadCommandHistory() {
+        const container = document.getElementById('command-history-container');
+        
+        // Por ahora mostramos información estática
+        const commands = [
+            {
+                timestamp: new Date(),
+                action: 'Control manual activado',
+                user: 'Usuario',
+                status: 'success'
+            }
+        ];
+        
+        if (commands.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center">No hay comandos recientes</p>';
+            return;
+        }
+        
+        let html = '<div class="list-group">';
+        
+        commands.forEach(cmd => {
+            html += `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1">${cmd.action}</h6>
+                        <small class="text-muted">Por ${cmd.user} - ${formatDateTime(cmd.timestamp)}</small>
+                    </div>
+                    <span class="badge bg-${cmd.status === 'success' ? 'success' : 'danger'}">
+                        ${cmd.status === 'success' ? 'Exitoso' : 'Error'}
+                    </span>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // Limpiar intervalo al salir
+    window.addEventListener('beforeunload', function() {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+        }
+    });
+</script>
+{% endblock %}

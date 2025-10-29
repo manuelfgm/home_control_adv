@@ -1,0 +1,32 @@
+[Unit]
+Description=Home Control Django Server
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/home_control
+Environment=PATH=/home/pi/home_control/venv/bin
+Environment=DJANGO_SETTINGS_MODULE=home_control.settings.raspberry_pi
+EnvironmentFile=/home/pi/home_control/.env
+ExecStart=/home/pi/home_control/venv/bin/gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 60 --access-logfile - --error-logfile - home_control.wsgi:application
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+
+# Configuración de logs
+StandardOutput=append:/var/log/home_control/django.log
+StandardError=append:/var/log/home_control/django_error.log
+
+# Configuración de seguridad
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/pi/home_control
+ReadWritePaths=/var/log/home_control
+
+[Install]
+WantedBy=multi-user.target

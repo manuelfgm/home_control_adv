@@ -1,6 +1,0 @@
-# Dependencias mínimas para scripts independientes (sin Django)
-paho-mqtt==2.1.0
-python-dotenv==1.0.1
-
-# Para desarrollo/debugging
-ipython==8.29.0

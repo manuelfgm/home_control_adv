@@ -19,9 +19,30 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
+from django.http import JsonResponse
+from django.db import connection
+
+def health_check(request):
+    """Simple health check endpoint"""
+    try:
+        # Verificar conexión a la base de datos
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        return JsonResponse({
+            'status': 'healthy',
+            'database': 'connected',
+            'timestamp': '2025-01-23T10:00:00Z'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': '2025-01-23T10:00:00Z'
+        }, status=500)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('health/', health_check, name='health_check'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('sensors/', include('sensors.urls')),
     path('heating/', include('heating.urls')),

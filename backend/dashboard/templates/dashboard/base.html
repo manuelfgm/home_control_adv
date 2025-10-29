@@ -42,6 +42,24 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        .error-message {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 0.25rem;
+            padding: 0.75rem 1.25rem;
+            margin: 1rem 0;
+        }
     </style>
 </head>
 <body>
@@ -63,6 +81,11 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'dashboard:schedules' %}">
                             <i class="fas fa-clock"></i> Horarios
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard:profiles' %}">
+                            <i class="fas fa-thermometer-half"></i> Perfiles
                         </a>
                     </li>
                     <li class="nav-item">
@@ -99,6 +122,9 @@
     </nav>
 
     <main class="container mt-4">
+        <!-- Mensajes de alerta dinámicos -->
+        <div id="alert-container"></div>
+        
         {% if messages %}
             {% for message in messages %}
                 <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
@@ -121,7 +147,104 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Utilidades JavaScript -->
     <script>
+        // Configuración CSRF para Django
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        
+        const csrftoken = getCookie('csrftoken');
+        
+        // Configurar headers por defecto para fetch
+        const defaultHeaders = {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrftoken,
+        };
+        
+        // Función para mostrar alertas
+        function showAlert(message, type = 'info') {
+            const alertContainer = document.getElementById('alert-container');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            alertContainer.appendChild(alertDiv);
+            
+            // Auto-remover después de 5 segundos
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+        
+        // Función para mostrar indicador de carga
+        function showLoading(containerId) {
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.innerHTML = `
+                    <div class="loading">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Cargando...</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
+        // Función para mostrar errores
+        function showError(containerId, error) {
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.innerHTML = `
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Error al cargar los datos: ${error}
+                    </div>
+                `;
+            }
+        }
+        
+        // Función para formatear fechas
+        function formatDateTime(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString('es-ES');
+        }
+        
+        // Función para formatear tiempo relativo
+        function timeAgo(dateString) {
+            if (!dateString) return 'Nunca';
+            const now = new Date();
+            const date = new Date(dateString);
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            
+            if (diffMins < 1) return 'Ahora mismo';
+            if (diffMins < 60) return `Hace ${diffMins} min`;
+            
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `Hace ${diffHours}h`;
+            
+            const diffDays = Math.floor(diffHours / 24);
+            return `Hace ${diffDays} días`;
+        }
+        
         // Función para actualizar timestamps
         function updateTimestamps() {
             const now = new Date().toLocaleString('es-ES');

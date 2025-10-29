@@ -1,66 +1,49 @@
-{% extends 'dashboard/base.html' %}
+{% extends "dashboard/base.html" %}
 
 {% block title %}Dashboard - Control de Calefacción{% endblock %}
 
 {% block content %}
 <div class="row">
-    <!-- Estado actual -->
-    <div class="col-md-3 mb-4">
-        <div class="card card-stat h-100" id="current-temp-card">
-            <div class="card-body text-center">
-                <i class="fas fa-thermometer-half fa-2x mb-3 text-primary"></i>
-                <h5 class="card-title">Temperatura Actual</h5>
-                <div class="temperature-display" id="current-temp">--°C</div>
-                <p class="text-muted" id="temp-timestamp">Cargando...</p>
+    <!-- Estado de Sensores -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-thermometer-half"></i> Estado de Sensores</h5>
+            </div>
+            <div class="card-body" id="sensors-container">
+                <!-- Se carga via JavaScript -->
             </div>
         </div>
     </div>
 
-    <div class="col-md-3 mb-4">
-        <div class="card card-stat h-100" id="heating-status-card">
-            <div class="card-body text-center">
-                <i class="fas fa-fire fa-2x mb-3"></i>
-                <h5 class="card-title">Estado Calefacción</h5>
-                <div class="h4" id="heating-status">Cargando...</div>
-                <p class="text-muted" id="heating-mode">--</p>
+    <!-- Estado de Calefacción -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-fire"></i> Estado de Calefacción</h5>
             </div>
-        </div>
-    </div>
-
-    <div class="col-md-3 mb-4">
-        <div class="card card-stat h-100">
-            <div class="card-body text-center">
-                <i class="fas fa-tint fa-2x mb-3 text-info"></i>
-                <h5 class="card-title">Humedad</h5>
-                <div class="h4" id="current-humidity">--%</div>
-                <p class="text-muted" id="humidity-timestamp">--</p>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-3 mb-4">
-        <div class="card card-stat h-100">
-            <div class="card-body text-center">
-                <i class="fas fa-clock fa-2x mb-3 text-warning"></i>
-                <h5 class="card-title">Próximo Horario</h5>
-                <div class="h6" id="next-schedule">--</div>
-                <p class="text-muted" id="next-schedule-temp">--</p>
+            <div class="card-body" id="heating-container">
+                <!-- Se carga via JavaScript -->
             </div>
         </div>
     </div>
 </div>
 
-<!-- Gráficos -->
 <div class="row">
-    <div class="col-md-8 mb-4">
+    <!-- Gráfico de Temperatura -->
+    <div class="col-12 mb-4">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Temperatura (últimas 24 horas)</h5>
-                <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-primary" onclick="updateChart(1)">1H</button>
-                    <button type="button" class="btn btn-outline-primary" onclick="updateChart(6)">6H</button>
-                    <button type="button" class="btn btn-primary" onclick="updateChart(24)">24H</button>
-                    <button type="button" class="btn btn-outline-primary" onclick="updateChart(168)">7D</button>
+                <h5><i class="fas fa-chart-line"></i> Temperatura (Últimas 24h)</h5>
+                <div class="btn-group" role="group">
+                    <input type="radio" class="btn-check" name="timeRange" id="range6h" value="6">
+                    <label class="btn btn-outline-primary btn-sm" for="range6h">6h</label>
+                    
+                    <input type="radio" class="btn-check" name="timeRange" id="range24h" value="24" checked>
+                    <label class="btn btn-outline-primary btn-sm" for="range24h">24h</label>
+                    
+                    <input type="radio" class="btn-check" name="timeRange" id="range7d" value="168">
+                    <label class="btn btn-outline-primary btn-sm" for="range7d">7d</label>
                 </div>
             </div>
             <div class="card-body">
@@ -68,60 +51,38 @@
             </div>
         </div>
     </div>
+</div>
 
-    <div class="col-md-4 mb-4">
+<div class="row">
+    <!-- Horario Actual -->
+    <div class="col-md-6 mb-4">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0">Control Manual</h5>
+                <h5><i class="fas fa-clock"></i> Horario Actual</h5>
             </div>
-            <div class="card-body">
-                <div class="d-grid gap-2">
-                    <button type="button" class="btn btn-success" onclick="manualOverride(true)">
-                        <i class="fas fa-fire"></i> Encender Calefacción
-                    </button>
-                    <button type="button" class="btn btn-danger" onclick="manualOverride(false)">
-                        <i class="fas fa-snowflake"></i> Apagar Calefacción
-                    </button>
-                    <button type="button" class="btn btn-secondary" onclick="clearOverride()">
-                        <i class="fas fa-robot"></i> Modo Automático
-                    </button>
-                </div>
-                <hr>
-                <div class="mb-3">
-                    <label for="override-duration" class="form-label">Duración (horas)</label>
-                    <select class="form-select" id="override-duration">
-                        <option value="">Indefinido</option>
-                        <option value="1">1 hora</option>
-                        <option value="2">2 horas</option>
-                        <option value="4">4 horas</option>
-                        <option value="8">8 horas</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
-        <!-- Estado de sensores -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5 class="mb-0">Estado de Sensores</h5>
-            </div>
-            <div class="card-body" id="sensors-status">
-                <p class="text-muted">Cargando...</p>
+            <div class="card-body" id="schedule-container">
+                <!-- Se carga via JavaScript -->
             </div>
         </div>
     </div>
-</div>
 
-<!-- Actividad reciente -->
-<div class="row">
-    <div class="col-12">
+    <!-- Control Rápido -->
+    <div class="col-md-6 mb-4">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0">Actividad Reciente</h5>
+                <h5><i class="fas fa-cogs"></i> Control Rápido</h5>
             </div>
-            <div class="card-body">
-                <div id="recent-activity">
-                    <p class="text-muted">Cargando actividad...</p>
+            <div class="card-body" id="quick-control-container">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-danger" onclick="manualControl('turn_off', null, 30)">
+                        <i class="fas fa-stop"></i> Apagar 30min
+                    </button>
+                    <button class="btn btn-success" onclick="manualControl('turn_on', null, 60)">
+                        <i class="fas fa-play"></i> Encender 1h
+                    </button>
+                    <button class="btn btn-warning" onclick="manualControl('clear_override')">
+                        <i class="fas fa-undo"></i> Modo Automático
+                    </button>
                 </div>
             </div>
         </div>
@@ -131,325 +92,278 @@
 
 {% block extra_js %}
 <script>
-let temperatureChart;
-let refreshInterval;
+    let temperatureChart = null;
+    let refreshInterval = null;
 
-// Inicializar dashboard
-document.addEventListener('DOMContentLoaded', function() {
-    initializeChart();
-    loadDashboardData();
-    
-    // Actualizar cada 30 segundos
-    refreshInterval = setInterval(loadDashboardData, 30000);
-});
-
-function initializeChart() {
-    const ctx = document.getElementById('temperatureChart').getContext('2d');
-    temperatureChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Temperatura (°C)',
-                data: [],
-                borderColor: 'rgb(75, 192, 192)',
-                backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                tension: 0.1,
-                fill: true
-            }, {
-                label: 'Objetivo (°C)',
-                data: [],
-                borderColor: 'rgb(255, 99, 132)',
-                backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                borderDash: [5, 5],
-                fill: false
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: false,
-                    title: {
-                        display: true,
-                        text: 'Temperatura (°C)'
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Tiempo'
-                    }
+    // Inicializar dashboard
+    document.addEventListener('DOMContentLoaded', function() {
+        loadDashboardData();
+        initializeChart();
+        
+        // Refrescar cada 30 segundos
+        refreshInterval = setInterval(loadDashboardData, 30000);
+        
+        // Event listeners para cambios de rango de tiempo
+        document.querySelectorAll('input[name="timeRange"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.checked) {
+                    loadTemperatureChart(parseInt(this.value));
                 }
-            },
-            plugins: {
-                legend: {
-                    display: true
-                }
-            }
-        }
+            });
+        });
     });
-}
 
-async function loadDashboardData() {
-    showLoading();
-    
-    try {
-        // Cargar datos de sensores
-        await loadSensorData();
+    // Cargar datos principales del dashboard
+    async function loadDashboardData() {
+        showLoading();
         
-        // Cargar estado de calefacción
-        await loadHeatingStatus();
-        
-        // Cargar estado de sensores
-        await loadSensorsStatus();
-        
-        // Cargar actividad reciente
-        await loadRecentActivity();
-        
-        updateTimestamps();
-    } catch (error) {
-        console.error('Error cargando datos del dashboard:', error);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function loadSensorData() {
-    try {
-        const response = await fetch('/sensors/api/readings/latest/');
-        const data = await response.json();
-        
-        if (data.room_sensor) {
-            const temp = data.room_sensor.temperature;
-            const humidity = data.room_sensor.humidity;
+        try {
+            const response = await fetch('/dashboard/api/status/', {
+                headers: defaultHeaders
+            });
             
-            if (temp) {
-                document.getElementById('current-temp').textContent = `${temp.value}°C`;
-                document.getElementById('temp-timestamp').textContent = 
-                    new Date(temp.timestamp).toLocaleString('es-ES');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
             }
             
-            if (humidity) {
-                document.getElementById('current-humidity').textContent = `${humidity.value}%`;
-                document.getElementById('humidity-timestamp').textContent = 
-                    new Date(humidity.timestamp).toLocaleString('es-ES');
-            }
+            const data = await response.json();
+            
+            renderSensors(data.sensors);
+            renderHeating(data.heating);
+            renderCurrentSchedule(data.current_schedule);
+            
+            hideLoading();
+            updateTimestamps();
+            
+        } catch (error) {
+            console.error('Error loading dashboard data:', error);
+            showError('sensors-container', error.message);
+            showError('heating-container', error.message);
+            hideLoading();
         }
-    } catch (error) {
-        console.error('Error cargando datos de sensores:', error);
     }
-}
 
-async function loadHeatingStatus() {
-    try {
-        const response = await fetch('/heating/api/control/');
-        const data = await response.json();
+    // Renderizar estado de sensores
+    function renderSensors(sensors) {
+        const container = document.getElementById('sensors-container');
         
-        if (data.results && data.results.length > 0) {
-            const control = data.results[0];
-            const statusElement = document.getElementById('heating-status');
-            const modeElement = document.getElementById('heating-mode');
-            const card = document.getElementById('heating-status-card');
-            
-            if (control.is_heating) {
-                statusElement.textContent = 'ENCENDIDA';
-                statusElement.className = 'h4 text-white';
-                card.className = 'card card-stat h-100 heating-on';
-            } else {
-                statusElement.textContent = 'APAGADA';
-                statusElement.className = 'h4 text-white';
-                card.className = 'card card-stat h-100 heating-off';
-            }
-            
-            modeElement.textContent = control.status_display;
-            
-            if (control.is_manual_override_active) {
-                modeElement.textContent += ' (Manual)';
-            }
+        if (!sensors || sensors.length === 0) {
+            container.innerHTML = '<p class="text-muted">No hay sensores configurados</p>';
+            return;
         }
-    } catch (error) {
-        console.error('Error cargando estado de calefacción:', error);
-    }
-}
 
-async function loadSensorsStatus() {
-    try {
-        const response = await fetch('/sensors/api/status/');
-        const data = await response.json();
-        const container = document.getElementById('sensors-status');
-        
-        if (data.results && data.results.length > 0) {
-            let html = '';
-            data.results.forEach(sensor => {
-                const statusClass = sensor.is_online ? 'status-online' : 'status-offline';
-                const statusIcon = sensor.is_online ? 'fa-check-circle' : 'fa-times-circle';
-                
-                html += `
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>${sensor.name}</span>
+        let html = '';
+        sensors.forEach(sensor => {
+            const statusClass = sensor.is_online ? 'status-online' : 'status-offline';
+            const statusIcon = sensor.is_online ? 'fa-check-circle' : 'fa-times-circle';
+            
+            html += `
+                <div class="mb-3 p-3 border rounded">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-1">${sensor.name || sensor.id}</h6>
                         <span class="${statusClass}">
                             <i class="fas ${statusIcon}"></i>
-                            ${sensor.is_online ? 'Online' : 'Offline'}
                         </span>
                     </div>
-                `;
-            });
-            container.innerHTML = html;
-        }
-    } catch (error) {
-        console.error('Error cargando estado de sensores:', error);
-    }
-}
-
-async function loadRecentActivity() {
-    try {
-        const response = await fetch('/heating/api/logs/?limit=5');
-        const data = await response.json();
-        const container = document.getElementById('recent-activity');
-        
-        if (data.results && data.results.length > 0) {
-            let html = '<div class="list-group list-group-flush">';
-            data.results.forEach(log => {
-                const time = new Date(log.timestamp).toLocaleString('es-ES');
-                html += `
-                    <div class="list-group-item d-flex justify-content-between align-items-start">
-                        <div>
-                            <strong>${log.action_display}</strong>
-                            <p class="mb-1">${log.reason || 'Sin descripción'}</p>
-                            <small class="text-muted">${time}</small>
+                    <div class="row">
+                        <div class="col-6">
+                            <small class="text-muted">Temperatura</small>
+                            <div class="h5">${sensor.temperature ? sensor.temperature + '°C' : 'N/A'}</div>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">Humedad</small>
+                            <div class="h5">${sensor.humidity ? sensor.humidity + '%' : 'N/A'}</div>
                         </div>
                     </div>
-                `;
-            });
-            html += '</div>';
-            container.innerHTML = html;
-        }
-    } catch (error) {
-        console.error('Error cargando actividad reciente:', error);
-    }
-}
-
-async function updateChart(hours = 24) {
-    try {
-        const now = new Date();
-        const start = new Date(now.getTime() - (hours * 60 * 60 * 1000));
-        
-        const params = new URLSearchParams({
-            sensor_type: 'temperature',
-            start_date: start.toISOString(),
-            end_date: now.toISOString()
+                    <small class="text-muted">
+                        <i class="fas fa-clock"></i> ${timeAgo(sensor.temp_timestamp)}
+                    </small>
+                </div>
+            `;
         });
         
-        const response = await fetch(`/sensors/api/readings/?${params}`);
-        const data = await response.json();
-        
-        if (data.results) {
-            const labels = [];
-            const temps = [];
-            
-            data.results.reverse().forEach(reading => {
-                const date = new Date(reading.timestamp);
-                labels.push(date.toLocaleTimeString('es-ES', { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
-                }));
-                temps.push(reading.value);
-            });
-            
-            temperatureChart.data.labels = labels;
-            temperatureChart.data.datasets[0].data = temps;
-            temperatureChart.update();
-        }
-    } catch (error) {
-        console.error('Error actualizando gráfico:', error);
+        container.innerHTML = html;
     }
-}
 
-async function manualOverride(turnOn) {
-    const duration = document.getElementById('override-duration').value;
-    const data = { turn_on: turnOn };
-    
-    if (duration) {
-        data.duration_hours = parseInt(duration);
+    // Renderizar estado de calefacción
+    function renderHeating(heating) {
+        const container = document.getElementById('heating-container');
+        
+        if (!heating) {
+            container.innerHTML = '<p class="text-muted">No hay datos de calefacción</p>';
+            return;
+        }
+
+        const statusClass = heating.is_heating ? 'heating-on' : 'heating-off';
+        const statusIcon = heating.is_heating ? 'fa-fire' : 'fa-snowflake';
+        const statusText = heating.is_heating ? 'ENCENDIDA' : 'APAGADA';
+        
+        const html = `
+            <div class="text-center p-3 rounded ${statusClass}">
+                <div class="h2 mb-3">
+                    <i class="fas ${statusIcon}"></i>
+                </div>
+                <div class="h4 mb-2">${statusText}</div>
+                <div class="row">
+                    <div class="col-6">
+                        <small>Actual</small>
+                        <div class="h5">${heating.current_temperature || 'N/A'}°C</div>
+                    </div>
+                    <div class="col-6">
+                        <small>Objetivo</small>
+                        <div class="h5">${heating.target_temperature || 'N/A'}°C</div>
+                    </div>
+                </div>
+                ${heating.is_manual_override ? 
+                    '<div class="mt-2"><small><i class="fas fa-hand-paper"></i> Control Manual</small></div>' : ''
+                }
+            </div>
+        `;
+        
+        container.innerHTML = html;
     }
-    
-    try {
-        const response = await fetch('/heating/api/control/1/manual_override/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
+
+    // Renderizar horario actual
+    function renderCurrentSchedule(schedule) {
+        const container = document.getElementById('schedule-container');
+        
+        if (!schedule) {
+            container.innerHTML = '<p class="text-muted">No hay horario activo</p>';
+            return;
+        }
+
+        const html = `
+            <div class="p-3 bg-light rounded">
+                <h6 class="mb-2">${schedule.name}</h6>
+                <div class="row">
+                    <div class="col-6">
+                        <small class="text-muted">Horario</small>
+                        <div>${schedule.start_time} - ${schedule.end_time}</div>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Temperatura</small>
+                        <div class="h5 text-primary">${schedule.target_temperature}°C</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+    }
+
+    // Inicializar gráfico de temperatura
+    function initializeChart() {
+        const ctx = document.getElementById('temperatureChart').getContext('2d');
+        
+        temperatureChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Temperatura (°C)',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    tension: 0.1,
+                    fill: true
+                }]
             },
-            body: JSON.stringify(data)
-        });
-        
-        if (response.ok) {
-            loadDashboardData();
-            showAlert('success', `Calefacción ${turnOn ? 'encendida' : 'apagada'} manualmente`);
-        } else {
-            showAlert('error', 'Error en el control manual');
-        }
-    } catch (error) {
-        console.error('Error en control manual:', error);
-        showAlert('error', 'Error de conexión');
-    }
-}
-
-async function clearOverride() {
-    try {
-        const response = await fetch('/heating/api/control/1/clear_override/', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken')
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: {
+                            display: true,
+                            text: 'Temperatura (°C)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Hora'
+                        }
+                    }
+                }
             }
         });
         
-        if (response.ok) {
-            loadDashboardData();
-            showAlert('success', 'Modo automático activado');
-        } else {
-            showAlert('error', 'Error activando modo automático');
-        }
-    } catch (error) {
-        console.error('Error limpiando override:', error);
-        showAlert('error', 'Error de conexión');
+        // Cargar datos iniciales
+        loadTemperatureChart(24);
     }
-}
 
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
+    // Cargar datos del gráfico de temperatura
+    async function loadTemperatureChart(hours = 24) {
+        try {
+            const response = await fetch(`/dashboard/api/temperature-chart/?hours=${hours}`, {
+                headers: defaultHeaders
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
             }
+            
+            const data = await response.json();
+            
+            temperatureChart.data.labels = data.labels;
+            temperatureChart.data.datasets[0].data = data.datasets[0].data;
+            temperatureChart.update();
+            
+        } catch (error) {
+            console.error('Error loading temperature chart:', error);
+            showAlert('Error al cargar el gráfico de temperatura', 'danger');
         }
     }
-    return cookieValue;
-}
 
-function showAlert(type, message) {
-    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
-    const alert = document.createElement('div');
-    alert.className = `alert ${alertClass} alert-dismissible fade show`;
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.querySelector('main').insertBefore(alert, document.querySelector('main').firstChild);
-    
-    // Auto dismiss after 5 seconds
-    setTimeout(() => {
-        if (alert.parentNode) {
-            alert.remove();
+    // Control manual
+    async function manualControl(action, temperature = null, duration = 60) {
+        try {
+            const requestData = {
+                action: action,
+                duration_minutes: duration
+            };
+            
+            if (temperature) {
+                requestData.temperature = temperature;
+            }
+            
+            const response = await fetch('/dashboard/api/manual-control/', {
+                method: 'POST',
+                headers: defaultHeaders,
+                body: JSON.stringify(requestData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showAlert(result.message, 'success');
+                // Refrescar datos después de 2 segundos
+                setTimeout(loadDashboardData, 2000);
+            } else {
+                showAlert(result.error || 'Error en el control manual', 'danger');
+            }
+            
+        } catch (error) {
+            console.error('Error in manual control:', error);
+            showAlert('Error al ejecutar control manual', 'danger');
         }
-    }, 5000);
-}
+    }
+
+    // Limpiar intervalo al salir
+    window.addEventListener('beforeunload', function() {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+        }
+    });
 </script>
 {% endblock %}

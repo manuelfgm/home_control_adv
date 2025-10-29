@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, time
 from django.utils import timezone
 from django.db.models import Q
-from .models import HeatingSchedule, HeatingControl, HeatingLog, TemperatureThreshold
+from .models import HeatingSchedule, HeatingControl, HeatingLog, HeatingSettings
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +23,21 @@ class HeatingLogic:
                 logger.warning("No hay temperatura actual disponible")
                 return
             
-            # Verificar si hay un horario activo
-            target_temp = self.get_current_target_temperature()
+            # Obtener configuración del sistema
+            settings = HeatingSettings.get_settings()
             
-            if target_temp is None:
-                # No hay horario activo, apagar calefacción
-                if control.is_heating:
-                    self.turn_off_heating(control, "Fuera de horario programado")
-                return
+            # Verificar si hay un horario activo
+            scheduled_temp = self.get_current_target_temperature()
+            
+            # Determinar temperatura objetivo
+            if scheduled_temp is not None:
+                # Hay un horario activo, usar esa temperatura
+                target_temp = max(scheduled_temp, settings.minimum_temperature)
+                reason_prefix = "Horario programado"
+            else:
+                # No hay horario activo, usar temperatura mínima configurada
+                target_temp = settings.minimum_temperature
+                reason_prefix = "Temperatura mínima"
             
             control.target_temperature = target_temp
             control.save()
@@ -39,29 +46,22 @@ class HeatingLogic:
             should_heat = self.should_turn_on_heating(current_temperature, target_temp, control.is_heating)
             
             if should_heat and not control.is_heating:
-                self.turn_on_heating(control, f"Temperatura {current_temperature}°C < objetivo {target_temp}°C")
+                reason = f"{reason_prefix}: {current_temperature}°C < objetivo {target_temp}°C"
+                self.turn_on_heating(control, reason)
             elif not should_heat and control.is_heating:
-                self.turn_off_heating(control, f"Temperatura {current_temperature}°C >= objetivo {target_temp}°C")
+                reason = f"{reason_prefix}: {current_temperature}°C >= objetivo {target_temp}°C"
+                self.turn_off_heating(control, reason)
                 
         except Exception as e:
             logger.error(f"Error evaluando estado de calefacción: {e}")
     
     def get_current_target_temperature(self):
         """Obtiene la temperatura objetivo para el momento actual"""
-        now = timezone.now()
-        current_day = now.weekday()  # 0 = Lunes, 6 = Domingo
-        current_time = now.time()
+        # Usar el método del modelo que maneja múltiples días
+        active_schedule = HeatingSchedule.get_current_active_schedule()
         
-        # Buscar horarios activos para el día actual
-        schedules = HeatingSchedule.objects.filter(
-            day_of_week=current_day,
-            is_active=True,
-            start_time__lte=current_time,
-            end_time__gte=current_time
-        ).order_by('-target_temperature')  # Priorizar temperatura más alta
-        
-        if schedules.exists():
-            return schedules.first().target_temperature
+        if active_schedule:
+            return active_schedule.target_temperature
         
         return None
     

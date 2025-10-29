@@ -4,7 +4,8 @@ from .views import (
     HeatingScheduleViewSet,
     HeatingControlViewSet,
     HeatingLogViewSet,
-    TemperatureThresholdViewSet
+    TemperatureThresholdViewSet,
+    TemperatureProfileViewSet
 )
 
 router = DefaultRouter()
@@ -12,6 +13,7 @@ router.register(r'schedules', HeatingScheduleViewSet)
 router.register(r'control', HeatingControlViewSet)
 router.register(r'logs', HeatingLogViewSet)
 router.register(r'thresholds', TemperatureThresholdViewSet)
+router.register(r'profiles', TemperatureProfileViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),

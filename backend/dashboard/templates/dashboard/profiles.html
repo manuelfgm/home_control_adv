@@ -1,0 +1,518 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+
+{% block title %}Perfiles de Temperatura{% endblock %}
+
+{% block extra_css %}
+<style>
+    .profile-card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .profile-card.active {
+        border-color: #28a745;
+        background-color: #f8fff9;
+    }
+    
+    .profile-card.vacation {
+        border-color: #ffc107;
+        background-color: #fffbf0;
+    }
+    
+    .temp-display {
+        font-size: 1.2em;
+        font-weight: bold;
+    }
+    
+    .temp-min { color: #007bff; }
+    .temp-comfort { color: #28a745; }
+    .temp-night { color: #6c757d; }
+    
+    .profile-status {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        font-weight: bold;
+    }
+    
+    .status-active {
+        background-color: #28a745;
+        color: white;
+    }
+    
+    .status-inactive {
+        background-color: #6c757d;
+        color: white;
+    }
+    
+    .status-default {
+        background-color: #17a2b8;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-thermometer-half"></i> Perfiles de Temperatura</h2>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#profileModal">
+                    <i class="fas fa-plus"></i> Nuevo Perfil
+                </button>
+            </div>
+            
+            <!-- Estado Actual -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle"></i> Estado Actual del Sistema</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row" id="currentStatus">
+                        <div class="col-md-3">
+                            <strong>Perfil Activo:</strong>
+                            <div id="activeProfileName">Cargando...</div>
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Temperatura Objetivo:</strong>
+                            <div class="temp-display temp-comfort" id="currentTarget">--°C</div>
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Temperatura Mínima:</strong>
+                            <div class="temp-display temp-min" id="minProtection">--°C</div>
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Modo:</strong>
+                            <div id="currentMode">--</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Acciones Rápidas -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-bolt"></i> Acciones Rápidas</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <button class="btn btn-warning btn-block" onclick="toggleVacationMode()">
+                                <i class="fas fa-umbrella-beach"></i> 
+                                <span id="vacationToggleText">Activar Modo Vacaciones</span>
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <button class="btn btn-info btn-block" onclick="activateNormalMode()">
+                                <i class="fas fa-home"></i> Activar Modo Normal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Lista de Perfiles -->
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-list"></i> Perfiles Configurados</h5>
+                </div>
+                <div class="card-body">
+                    <div id="profilesList">
+                        <!-- Los perfiles se cargarán aquí via JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Crear/Editar Perfil -->
+<div class="modal fade" id="profileModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nuevo Perfil de Temperatura</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="profileForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="profileName" class="form-label">Nombre del Perfil</label>
+                                <input type="text" class="form-control" id="profileName" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="profileType" class="form-label">Tipo de Perfil</label>
+                                <select class="form-control" id="profileType">
+                                    <option value="custom">Personalizado</option>
+                                    <option value="normal">Normal</option>
+                                    <option value="vacation">Vacaciones</option>
+                                    <option value="night">Nocturno</option>
+                                    <option value="economy">Económico</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="minTemp" class="form-label">Temperatura Mínima (°C)</label>
+                                <input type="number" class="form-control" id="minTemp" 
+                                       min="0" max="30" step="0.5" value="16" required>
+                                <small class="form-text text-muted">Protección contra frío</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="comfortTemp" class="form-label">Temperatura Confort (°C)</label>
+                                <input type="number" class="form-control" id="comfortTemp" 
+                                       min="5" max="35" step="0.5" value="20" required>
+                                <small class="form-text text-muted">Durante el día</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="nightTemp" class="form-label">Temperatura Nocturna (°C)</label>
+                                <input type="number" class="form-control" id="nightTemp" 
+                                       min="0" max="30" step="0.5" value="17" required>
+                                <small class="form-text text-muted">Durante la noche</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="nightStart" class="form-label">Inicio Modo Nocturno</label>
+                                <input type="time" class="form-control" id="nightStart" value="23:00">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="nightEnd" class="form-label">Fin Modo Nocturno</label>
+                                <input type="time" class="form-control" id="nightEnd" value="06:00">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="autoWeekdays" checked>
+                                <label class="form-check-label" for="autoWeekdays">
+                                    Auto-activar días laborables
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="autoWeekends" checked>
+                                <label class="form-check-label" for="autoWeekends">
+                                    Auto-activar fines de semana
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="saveProfile()">Guardar Perfil</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let profiles = [];
+let currentEditingProfile = null;
+
+// Cargar datos al inicializar
+document.addEventListener('DOMContentLoaded', function() {
+    loadProfiles();
+    loadCurrentStatus();
+});
+
+// Cargar perfiles
+async function loadProfiles() {
+    try {
+        const response = await fetch('/heating/api/profiles/');
+        profiles = await response.json();
+        renderProfiles();
+    } catch (error) {
+        console.error('Error cargando perfiles:', error);
+        showAlert('Error cargando perfiles', 'danger');
+    }
+}
+
+// Cargar estado actual
+async function loadCurrentStatus() {
+    try {
+        const response = await fetch('/heating/api/profiles/current_status/');
+        const status = await response.json();
+        
+        document.getElementById('activeProfileName').textContent = status.active_profile.name;
+        document.getElementById('currentTarget').textContent = status.current_target_temperature + '°C';
+        document.getElementById('minProtection').textContent = status.minimum_protection_temp + '°C';
+        document.getElementById('currentMode').textContent = status.is_night_time ? 'Nocturno' : 'Diurno';
+        
+        // Actualizar botón de vacaciones
+        const isVacation = status.active_profile.profile_type === 'vacation';
+        document.getElementById('vacationToggleText').textContent = 
+            isVacation ? 'Desactivar Modo Vacaciones' : 'Activar Modo Vacaciones';
+        
+    } catch (error) {
+        console.error('Error cargando estado:', error);
+    }
+}
+
+// Renderizar lista de perfiles
+function renderProfiles() {
+    const container = document.getElementById('profilesList');
+    
+    if (profiles.length === 0) {
+        container.innerHTML = '<p class="text-muted">No hay perfiles configurados.</p>';
+        return;
+    }
+    
+    container.innerHTML = profiles.map(profile => `
+        <div class="profile-card ${profile.is_active ? 'active' : ''} ${profile.profile_type === 'vacation' ? 'vacation' : ''}" 
+             style="position: relative;">
+            
+            <div class="profile-status ${profile.is_active ? 'status-active' : 'status-inactive'}">
+                ${profile.is_active ? 'ACTIVO' : 'INACTIVO'}
+            </div>
+            
+            ${profile.is_default ? '<div class="profile-status status-default" style="top: 40px;">POR DEFECTO</div>' : ''}
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>${profile.name}</h5>
+                    <p class="text-muted mb-2">${profile.profile_type_display}</p>
+                    
+                    <div class="mb-2">
+                        <span class="temp-display temp-min">${profile.min_temperature}°C</span> mínima |
+                        <span class="temp-display temp-comfort">${profile.default_comfort_temperature}°C</span> confort |
+                        <span class="temp-display temp-night">${profile.night_temperature}°C</span> nocturna
+                    </div>
+                    
+                    <small class="text-muted">
+                        Nocturno: ${profile.night_start_time} - ${profile.night_end_time}
+                    </small>
+                </div>
+                
+                <div class="col-md-6 text-end">
+                    <div class="btn-group mb-2">
+                        <button class="btn btn-sm ${profile.is_active ? 'btn-danger' : 'btn-success'}" 
+                                onclick="toggleProfile(${profile.id}, ${!profile.is_active})">
+                            <i class="fas ${profile.is_active ? 'fa-stop' : 'fa-play'}"></i>
+                            ${profile.is_active ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="editProfile(${profile.id})">
+                            <i class="fas fa-edit"></i> Editar
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteProfile(${profile.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="small text-muted">
+                        ${profile.auto_activate_weekdays ? '✓ Laborables' : '✗ Laborables'} |
+                        ${profile.auto_activate_weekends ? '✓ Fines de semana' : '✗ Fines de semana'}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Activar/desactivar perfil
+async function toggleProfile(profileId, activate) {
+    try {
+        const response = await fetch('/heating/api/profiles/activate_profile/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                profile_id: profileId,
+                activate: activate
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert(result.message, 'success');
+            loadProfiles();
+            loadCurrentStatus();
+        } else {
+            showAlert(result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showAlert('Error al cambiar estado del perfil', 'danger');
+    }
+}
+
+// Alternar modo vacaciones
+async function toggleVacationMode() {
+    const button = document.getElementById('vacationToggleText');
+    const currentText = button.textContent;
+    const enable = currentText.includes('Activar');
+    
+    try {
+        const response = await fetch(`/heating/api/profiles/vacation_mode/?enable=${enable}`);
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert(result.message, 'success');
+            loadProfiles();
+            loadCurrentStatus();
+        } else {
+            showAlert(result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showAlert('Error al cambiar modo vacaciones', 'danger');
+    }
+}
+
+// Activar modo normal
+async function activateNormalMode() {
+    const normalProfile = profiles.find(p => p.profile_type === 'normal' && p.is_default);
+    
+    if (normalProfile) {
+        await toggleProfile(normalProfile.id, true);
+    } else {
+        showAlert('No se encontró un perfil normal por defecto', 'warning');
+    }
+}
+
+// Guardar perfil
+async function saveProfile() {
+    const formData = {
+        name: document.getElementById('profileName').value,
+        profile_type: document.getElementById('profileType').value,
+        min_temperature: parseFloat(document.getElementById('minTemp').value),
+        default_comfort_temperature: parseFloat(document.getElementById('comfortTemp').value),
+        night_temperature: parseFloat(document.getElementById('nightTemp').value),
+        night_start_time: document.getElementById('nightStart').value,
+        night_end_time: document.getElementById('nightEnd').value,
+        auto_activate_weekdays: document.getElementById('autoWeekdays').checked,
+        auto_activate_weekends: document.getElementById('autoWeekends').checked
+    };
+    
+    try {
+        const url = currentEditingProfile ? 
+            `/heating/api/profiles/${currentEditingProfile}/` : 
+            '/heating/api/profiles/';
+            
+        const method = currentEditingProfile ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+            showAlert('Perfil guardado correctamente', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('profileModal')).hide();
+            loadProfiles();
+            resetForm();
+        } else {
+            const error = await response.json();
+            showAlert('Error al guardar perfil: ' + JSON.stringify(error), 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showAlert('Error al guardar perfil', 'danger');
+    }
+}
+
+// Editar perfil
+function editProfile(profileId) {
+    const profile = profiles.find(p => p.id === profileId);
+    if (!profile) return;
+    
+    currentEditingProfile = profileId;
+    
+    document.getElementById('profileName').value = profile.name;
+    document.getElementById('profileType').value = profile.profile_type;
+    document.getElementById('minTemp').value = profile.min_temperature;
+    document.getElementById('comfortTemp').value = profile.default_comfort_temperature;
+    document.getElementById('nightTemp').value = profile.night_temperature;
+    document.getElementById('nightStart').value = profile.night_start_time;
+    document.getElementById('nightEnd').value = profile.night_end_time;
+    document.getElementById('autoWeekdays').checked = profile.auto_activate_weekdays;
+    document.getElementById('autoWeekends').checked = profile.auto_activate_weekends;
+    
+    document.querySelector('.modal-title').textContent = 'Editar Perfil de Temperatura';
+    
+    new bootstrap.Modal(document.getElementById('profileModal')).show();
+}
+
+// Eliminar perfil
+async function deleteProfile(profileId) {
+    if (!confirm('¿Estás seguro de que quieres eliminar este perfil?')) return;
+    
+    try {
+        const response = await fetch(`/heating/api/profiles/${profileId}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        if (response.ok) {
+            showAlert('Perfil eliminado correctamente', 'success');
+            loadProfiles();
+        } else {
+            showAlert('Error al eliminar perfil', 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showAlert('Error al eliminar perfil', 'danger');
+    }
+}
+
+// Resetear formulario
+function resetForm() {
+    currentEditingProfile = null;
+    document.getElementById('profileForm').reset();
+    document.querySelector('.modal-title').textContent = 'Nuevo Perfil de Temperatura';
+    document.getElementById('minTemp').value = 16;
+    document.getElementById('comfortTemp').value = 20;
+    document.getElementById('nightTemp').value = 17;
+    document.getElementById('nightStart').value = '23:00';
+    document.getElementById('nightEnd').value = '06:00';
+}
+
+// Evento para resetear formulario cuando se cierra el modal
+document.getElementById('profileModal').addEventListener('hidden.bs.modal', resetForm);
+
+// Recargar cada 30 segundos
+setInterval(() => {
+    loadCurrentStatus();
+}, 30000);
+</script>
+{% endblock %}

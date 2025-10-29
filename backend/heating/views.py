@@ -5,14 +5,16 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from datetime import timedelta, datetime, time
-from .models import HeatingSchedule, HeatingControl, HeatingLog, TemperatureThreshold
+from .models import HeatingSchedule, HeatingControl, HeatingLog, TemperatureThreshold, TemperatureProfile
 from .serializers import (
     HeatingScheduleSerializer,
     HeatingControlSerializer,
     HeatingLogSerializer,
     TemperatureThresholdSerializer,
+    TemperatureProfileSerializer,
     ManualOverrideSerializer,
-    HeatingStatsSerializer
+    HeatingStatsSerializer,
+    ProfileActivationSerializer
 )
 from .heating_logic import HeatingLogic
 
@@ -185,4 +187,147 @@ class HeatingLogViewSet(viewsets.ReadOnlyModelViewSet):
 class TemperatureThresholdViewSet(viewsets.ModelViewSet):
     """ViewSet para umbrales de temperatura"""
     queryset = TemperatureThreshold.objects.all()
+    serializer_class = TemperatureThresholdSerializer
+
+
+class TemperatureProfileViewSet(viewsets.ModelViewSet):
+    """ViewSet para perfiles de temperatura"""
+    queryset = TemperatureProfile.objects.all()
+    serializer_class = TemperatureProfileSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtro por tipo de perfil
+        profile_type = self.request.query_params.get('type')
+        if profile_type:
+            queryset = queryset.filter(profile_type=profile_type)
+        
+        # Solo perfiles activos
+        active_only = self.request.query_params.get('active_only')
+        if active_only == 'true':
+            queryset = queryset.filter(is_active=True)
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def active_profile(self, request):
+        """Obtiene el perfil activo actual"""
+        profile = TemperatureProfile.get_active_profile()
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'])
+    def activate_profile(self, request):
+        """Activa un perfil específico"""
+        serializer = ProfileActivationSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            profile_id = serializer.validated_data['profile_id']
+            activate = serializer.validated_data['activate']
+            
+            try:
+                profile = TemperatureProfile.objects.get(id=profile_id)
+                
+                if activate:
+                    # Desactivar otros perfiles
+                    TemperatureProfile.objects.update(is_active=False)
+                    # Activar el seleccionado
+                    profile.is_active = True
+                    profile.save()
+                    
+                    # Log del cambio
+                    HeatingLog.objects.create(
+                        controller_id='system',
+                        action='temperature_change',
+                        reason=f'Perfil activado: {profile.name}'
+                    )
+                    
+                    message = f'Perfil "{profile.name}" activado correctamente'
+                else:
+                    profile.is_active = False
+                    profile.save()
+                    message = f'Perfil "{profile.name}" desactivado'
+                
+                return Response({
+                    'success': True,
+                    'message': message,
+                    'profile': TemperatureProfileSerializer(profile).data
+                })
+                
+            except TemperatureProfile.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': 'Perfil no encontrado'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['get'])
+    def vacation_mode(self, request):
+        """Activa/desactiva modo vacaciones"""
+        enable = request.query_params.get('enable', 'false').lower() == 'true'
+        
+        try:
+            vacation_profile = TemperatureProfile.objects.get(profile_type='vacation')
+            
+            if enable:
+                # Desactivar otros perfiles y activar vacaciones
+                TemperatureProfile.objects.update(is_active=False)
+                vacation_profile.is_active = True
+                vacation_profile.save()
+                
+                HeatingLog.objects.create(
+                    controller_id='system',
+                    action='temperature_change',
+                    reason='Modo vacaciones activado'
+                )
+                
+                message = 'Modo vacaciones activado'
+            else:
+                vacation_profile.is_active = False
+                vacation_profile.save()
+                
+                # Activar perfil normal por defecto
+                normal_profile = TemperatureProfile.objects.filter(
+                    profile_type='normal', is_default=True
+                ).first()
+                
+                if normal_profile:
+                    normal_profile.is_active = True
+                    normal_profile.save()
+                
+                HeatingLog.objects.create(
+                    controller_id='system',
+                    action='temperature_change',
+                    reason='Modo vacaciones desactivado'
+                )
+                
+                message = 'Modo vacaciones desactivado'
+            
+            return Response({
+                'success': True,
+                'message': message,
+                'vacation_active': enable
+            })
+            
+        except TemperatureProfile.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Perfil de vacaciones no encontrado'
+            }, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['get'])
+    def current_status(self, request):
+        """Estado actual del sistema de perfiles"""
+        active_profile = TemperatureProfile.get_active_profile()
+        current_time = timezone.now().time()
+        
+        return Response({
+            'active_profile': TemperatureProfileSerializer(active_profile).data,
+            'current_target_temperature': active_profile.get_target_temperature(current_time),
+            'is_night_time': active_profile.is_night_time(current_time),
+            'minimum_protection_temp': active_profile.min_temperature,
+            'current_time': current_time.strftime('%H:%M'),
+        })
     serializer_class = TemperatureThresholdSerializer

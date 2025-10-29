@@ -1,0 +1,33 @@
+/*
+ * Archivo de configuración para Actuador MQTT
+ * Copia este archivo como config.h y modifica los valores
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// ===== CONFIGURACIÓN WiFi =====
+const char* ssid = "TU_WIFI_SSID";
+const char* password = "TU_WIFI_PASSWORD";
+
+// ===== CONFIGURACIÓN MQTT =====
+const char* mqtt_server = "192.168.1.100";  // IP de tu Raspberry Pi
+const int mqtt_port = 1883;
+const char* mqtt_user = "";                  // Usuario MQTT (opcional)
+const char* mqtt_pass = "";                  // Password MQTT (opcional)
+
+// ===== CONFIGURACIÓN DEL ACTUADOR =====
+const char* actuator_id = "heating_actuator_01";  // ID único del actuador
+
+// ===== CONFIGURACIÓN DE PINES =====
+#define RELAY_PIN 2                          // Pin del relé
+#define LED_PIN LED_BUILTIN                  // LED indicador
+
+// ===== CONFIGURACIÓN DE TIMING =====
+const unsigned long statusInterval = 60000;  // 1 minuto entre reportes de estado
+
+// ===== CONFIGURACIÓN DE SEGURIDAD =====
+const unsigned long maxOnTime = 3600000;     // Máximo tiempo encendido (1 hora)
+const float emergencyShutoffTemp = 30.0;     // Temperatura de emergencia
+
+#endif // CONFIG_H

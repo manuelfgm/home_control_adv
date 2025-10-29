@@ -1,0 +1,30 @@
+/*
+ * Archivo de configuración para Sensor MQTT
+ * Copia este archivo como config.h y modifica los valores
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// ===== CONFIGURACIÓN WiFi =====
+const char* ssid = "TU_WIFI_SSID";
+const char* password = "TU_WIFI_PASSWORD";
+
+// ===== CONFIGURACIÓN MQTT =====
+const char* mqtt_server = "192.168.1.100";  // IP de tu Raspberry Pi
+const int mqtt_port = 1883;
+const char* mqtt_user = "";                  // Usuario MQTT (opcional)
+const char* mqtt_pass = "";                  // Password MQTT (opcional)
+
+// ===== CONFIGURACIÓN DEL SENSOR =====
+const char* sensor_id = "room_sensor_01";   // ID único del sensor
+
+// ===== CONFIGURACIÓN DE PINES =====
+#define DHT_PIN 2                            // Pin del sensor DHT22
+#define DHT_TYPE DHT22                       // Tipo de sensor DHT
+
+// ===== CONFIGURACIÓN DE TIMING =====
+const unsigned long measurementInterval = 30000;   // 30 segundos entre mediciones
+const unsigned long statusInterval = 300000;       // 5 minutos entre reportes de estado
+
+#endif // CONFIG_H
