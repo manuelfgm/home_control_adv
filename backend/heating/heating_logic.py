@@ -67,11 +67,8 @@ class HeatingLogic:
     
     def should_turn_on_heating(self, current_temp, target_temp, currently_heating):
         """Determina si se debe encender la calefacción usando histéresis"""
-        threshold = TemperatureThreshold.objects.filter(is_active=True).first()
-        if threshold:
-            hysteresis = threshold.hysteresis
-        else:
-            hysteresis = self.hysteresis
+        settings = HeatingSettings.get_settings()
+        hysteresis = settings.hysteresis
         
         if currently_heating:
             # Si ya está calentando, mantener hasta alcanzar temperatura objetivo

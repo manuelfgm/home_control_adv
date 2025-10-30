@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import HeatingSchedule, HeatingControl, HeatingLog, TemperatureThreshold, TemperatureProfile
+from .models import HeatingSchedule, HeatingControl, HeatingLog, HeatingSettings
 
 
 class HeatingScheduleSerializer(serializers.ModelSerializer):
@@ -63,48 +63,11 @@ class HeatingLogSerializer(serializers.ModelSerializer):
         read_only_fields = ('timestamp',)
 
 
-class TemperatureThresholdSerializer(serializers.ModelSerializer):
+class HeatingSettingsSerializer(serializers.ModelSerializer):
     class Meta:
-        model = TemperatureThreshold
+        model = HeatingSettings
         fields = '__all__'
         read_only_fields = ('created_at', 'updated_at')
-
-
-class TemperatureProfileSerializer(serializers.ModelSerializer):
-    profile_type_display = serializers.CharField(source='get_profile_type_display', read_only=True)
-    is_night_time_now = serializers.SerializerMethodField()
-    current_target_temperature = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = TemperatureProfile
-        fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
-    
-    def get_is_night_time_now(self, obj):
-        """Verificar si actualmente es horario nocturno"""
-        return obj.is_night_time()
-    
-    def get_current_target_temperature(self, obj):
-        """Obtener temperatura objetivo actual"""
-        return obj.get_target_temperature()
-    
-    def validate(self, data):
-        """Validación personalizada"""
-        min_temp = data.get('min_temperature', 0)
-        comfort_temp = data.get('default_comfort_temperature', 20)
-        night_temp = data.get('night_temperature', 17)
-        
-        if min_temp >= comfort_temp:
-            raise serializers.ValidationError({
-                'min_temperature': 'La temperatura mínima debe ser menor que la de confort'
-            })
-        
-        if night_temp < min_temp:
-            raise serializers.ValidationError({
-                'night_temperature': 'La temperatura nocturna no puede ser menor que la mínima'
-            })
-        
-        return data
 
 
 class ManualOverrideSerializer(serializers.Serializer):
@@ -121,9 +84,3 @@ class HeatingStatsSerializer(serializers.Serializer):
     efficiency_percent = serializers.FloatField()
     period_start = serializers.DateTimeField()
     period_end = serializers.DateTimeField()
-
-
-class ProfileActivationSerializer(serializers.Serializer):
-    """Serializer para activar/desactivar perfiles"""
-    profile_id = serializers.IntegerField()
-    activate = serializers.BooleanField(default=True)

@@ -38,9 +38,9 @@ class ControlView(LoginRequiredMixin, TemplateView):
     login_url = '/admin/login/'
 
 
-class ProfilesView(LoginRequiredMixin, TemplateView):
-    """Vista para perfiles de temperatura - Solo sirve template estático"""
-    template_name = 'dashboard/profiles.html'
+class SettingsView(LoginRequiredMixin, TemplateView):
+    """Vista para configuración del sistema - Solo sirve template estático"""
+    template_name = 'dashboard/settings.html'
     login_url = '/admin/login/'
 
 

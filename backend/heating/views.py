@@ -5,68 +5,93 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from datetime import timedelta, datetime, time
-from .models import HeatingSchedule, HeatingControl, HeatingLog, TemperatureThreshold, TemperatureProfile
+from .models import HeatingSchedule, HeatingControl, HeatingLog, HeatingSettings
 from .serializers import (
     HeatingScheduleSerializer,
     HeatingControlSerializer,
     HeatingLogSerializer,
-    TemperatureThresholdSerializer,
-    TemperatureProfileSerializer,
+    HeatingSettingsSerializer,
     ManualOverrideSerializer,
-    HeatingStatsSerializer,
-    ProfileActivationSerializer
+    HeatingStatsSerializer
 )
 from .heating_logic import HeatingLogic
 
 
+def dashboard(request):
+    """Vista principal del dashboard de calefacción"""
+    context = {
+        'active_schedules': HeatingSchedule.objects.filter(is_active=True).order_by('start_time'),
+        'heating_control': HeatingControl.objects.first() or HeatingControl.objects.create(),
+        'recent_logs': HeatingLog.objects.all()[:10],
+        'settings': HeatingSettings.get_settings(),
+    }
+    return render(request, 'dashboard/index.html', context)
+
+
 class HeatingScheduleViewSet(viewsets.ModelViewSet):
-    """ViewSet para horarios de calefacción"""
+    """ViewSet para gestionar horarios de calefacción"""
+    
     queryset = HeatingSchedule.objects.all()
     serializer_class = HeatingScheduleSerializer
     
     def get_queryset(self):
+        """Filtrar por estado activo si se solicita"""
         queryset = super().get_queryset()
+        is_active = self.request.query_params.get('is_active')
         
-        # Filtro por día de la semana
-        day = self.request.query_params.get('day')
-        if day is not None:
-            queryset = queryset.filter(day_of_week=day)
+        if is_active is not None:
+            is_active = is_active.lower() == 'true'
+            queryset = queryset.filter(is_active=is_active)
         
-        # Solo horarios activos
-        active_only = self.request.query_params.get('active_only')
-        if active_only == 'true':
-            queryset = queryset.filter(is_active=True)
-        
-        return queryset
+        return queryset.order_by('start_time')
     
     @action(detail=False, methods=['get'])
-    def current_schedule(self, request):
-        """Obtiene el horario activo actual"""
-        now = timezone.now()
-        current_day = now.weekday()
-        current_time = now.time()
+    def active(self, request):
+        """Obtener horarios activos"""
+        active_schedules = self.get_queryset().filter(is_active=True)
+        serializer = self.get_serializer(active_schedules, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def current(self, request):
+        """Obtener el horario activo actual"""
+        current_schedule = HeatingSchedule.get_current_active_schedule()
         
-        schedule = HeatingSchedule.objects.filter(
-            day_of_week=current_day,
-            is_active=True,
-            start_time__lte=current_time,
-            end_time__gte=current_time
-        ).order_by('-target_temperature').first()
+        if current_schedule:
+            serializer = self.get_serializer(current_schedule)
+            return Response({
+                'has_active_schedule': True,
+                'schedule': serializer.data,
+                'target_temperature': current_schedule.target_temperature
+            })
+        else:
+            settings = HeatingSettings.get_settings()
+            return Response({
+                'has_active_schedule': False,
+                'schedule': None,
+                'target_temperature': settings.minimum_temperature
+            })
+    
+    @action(detail=True, methods=['post'])
+    def toggle_active(self, request, pk=None):
+        """Activar/desactivar un horario"""
+        schedule = self.get_object()
+        schedule.is_active = not schedule.is_active
+        schedule.save()
         
-        if schedule:
-            return Response(HeatingScheduleSerializer(schedule).data)
-        
-        return Response({'message': 'No hay horario activo'}, status=404)
+        serializer = self.get_serializer(schedule)
+        return Response(serializer.data)
 
 
 class HeatingControlViewSet(viewsets.ModelViewSet):
     """ViewSet para control de calefacción"""
+    
     queryset = HeatingControl.objects.all()
     serializer_class = HeatingControlSerializer
     
     @action(detail=True, methods=['post'])
     def manual_override(self, request, pk=None):
-        """Activa control manual de la calefacción"""
+        """Control manual de la calefacción"""
         control = self.get_object()
         serializer = ManualOverrideSerializer(data=request.data)
         
@@ -74,260 +99,191 @@ class HeatingControlViewSet(viewsets.ModelViewSet):
             turn_on = serializer.validated_data['turn_on']
             duration_hours = serializer.validated_data.get('duration_hours')
             
-            heating_logic = HeatingLogic()
-            heating_logic.manual_override(control, turn_on, duration_hours)
+            logic = HeatingLogic()
+            logic.manual_override(control, turn_on, duration_hours)
             
-            return Response({'status': 'success', 'message': 'Control manual activado'})
+            # Actualizar el estado
+            control.refresh_from_db()
+            response_serializer = self.get_serializer(control)
+            
+            return Response({
+                'message': 'Override manual activado',
+                'control': response_serializer.data
+            })
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=True, methods=['post'])
     def clear_override(self, request, pk=None):
-        """Desactiva el control manual"""
+        """Limpiar override manual"""
         control = self.get_object()
         
-        heating_logic = HeatingLogic()
-        heating_logic.clear_manual_override(control)
-        
-        return Response({'status': 'success', 'message': 'Control manual desactivado'})
-    
-    @action(detail=True, methods=['post'])
-    def force_evaluation(self, request, pk=None):
-        """Fuerza la evaluación del estado de calefacción"""
-        control = self.get_object()
-        
-        heating_logic = HeatingLogic()
-        heating_logic.evaluate_heating_state(control)
+        logic = HeatingLogic()
+        logic.clear_manual_override(control)
         
         control.refresh_from_db()
-        return Response(HeatingControlSerializer(control).data)
+        serializer = self.get_serializer(control)
+        
+        return Response({
+            'message': 'Override manual desactivado',
+            'control': serializer.data
+        })
+    
+    @action(detail=False, methods=['get'])
+    def status(self, request):
+        """Obtener estado completo del sistema"""
+        control = HeatingControl.objects.first()
+        if not control:
+            control = HeatingControl.objects.create()
+        
+        current_schedule = HeatingSchedule.get_current_active_schedule()
+        settings = HeatingSettings.get_settings()
+        
+        # Determinar temperatura objetivo
+        if current_schedule:
+            target_temp = current_schedule.target_temperature
+            heating_reason = f"Horario: {current_schedule.name}"
+        else:
+            target_temp = settings.minimum_temperature
+            heating_reason = "Temperatura mínima"
+        
+        return Response({
+            'control': HeatingControlSerializer(control).data,
+            'current_schedule': HeatingScheduleSerializer(current_schedule).data if current_schedule else None,
+            'settings': HeatingSettingsSerializer(settings).data,
+            'target_temperature': target_temp,
+            'heating_reason': heating_reason,
+            'has_manual_override': control.is_manual_override_active(),
+        })
 
 
 class HeatingLogViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet para logs de calefacción"""
+    """ViewSet para logs de calefacción (solo lectura)"""
+    
     queryset = HeatingLog.objects.all()
     serializer_class = HeatingLogSerializer
     
     def get_queryset(self):
+        """Filtrar logs por fecha y acción"""
         queryset = super().get_queryset()
         
-        # Filtros
-        controller_id = self.request.query_params.get('controller_id')
-        action = self.request.query_params.get('action')
+        # Filtrar por fecha
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
         
-        if controller_id:
-            queryset = queryset.filter(controller_id=controller_id)
-        
-        if action:
-            queryset = queryset.filter(action=action)
-        
         if start_date:
             queryset = queryset.filter(timestamp__gte=start_date)
-        
         if end_date:
             queryset = queryset.filter(timestamp__lte=end_date)
         
-        return queryset
+        # Filtrar por acción
+        action = self.request.query_params.get('action')
+        if action:
+            queryset = queryset.filter(action=action)
+        
+        return queryset.order_by('-timestamp')
     
     @action(detail=False, methods=['get'])
     def stats(self, request):
-        """Obtiene estadísticas de uso de calefacción"""
+        """Estadísticas de calefacción"""
+        # Parámetros de período
         days = int(request.query_params.get('days', 7))
-        controller_id = request.query_params.get('controller_id', 'main_heating')
+        start_date = timezone.now() - timedelta(days=days)
+        end_date = timezone.now()
         
-        since = timezone.now() - timedelta(days=days)
+        # Logs del período
+        logs = self.get_queryset().filter(
+            timestamp__gte=start_date,
+            timestamp__lte=end_date
+        )
         
-        # Obtener todos los eventos de encendido y apagado
-        logs = HeatingLog.objects.filter(
-            controller_id=controller_id,
-            timestamp__gte=since,
-            action__in=['turn_on', 'turn_off']
-        ).order_by('timestamp')
+        # Calcular estadísticas
+        turn_on_logs = logs.filter(action='turn_on')
+        turn_off_logs = logs.filter(action='turn_off')
         
-        total_runtime_minutes = 0
-        total_cycles = 0
-        on_time = None
+        total_cycles = turn_on_logs.count()
+        total_runtime = turn_off_logs.aggregate(
+            total=Sum('duration_minutes')
+        )['total'] or 0
         
-        for log in logs:
-            if log.action == 'turn_on':
-                on_time = log.timestamp
-                total_cycles += 1
-            elif log.action == 'turn_off' and on_time:
-                runtime = (log.timestamp - on_time).total_seconds() / 60
-                total_runtime_minutes += runtime
-                on_time = None
+        avg_cycle_duration = total_runtime / total_cycles if total_cycles > 0 else 0
+        total_runtime_hours = total_runtime / 60
         
-        # Si está actualmente encendido, contar hasta ahora
-        if on_time:
-            runtime = (timezone.now() - on_time).total_seconds() / 60
-            total_runtime_minutes += runtime
+        # Eficiencia aproximada (tiempo encendido vs tiempo total)
+        total_period_hours = (end_date - start_date).total_seconds() / 3600
+        efficiency_percent = (total_runtime_hours / total_period_hours * 100) if total_period_hours > 0 else 0
         
-        total_runtime_hours = total_runtime_minutes / 60
-        avg_cycle_duration = total_runtime_minutes / total_cycles if total_cycles > 0 else 0
-        
-        # Calcular eficiencia (tiempo funcionando vs tiempo total)
-        total_hours = days * 24
-        efficiency_percent = (total_runtime_hours / total_hours) * 100 if total_hours > 0 else 0
-        
-        data = {
+        stats_data = {
             'total_runtime_hours': round(total_runtime_hours, 2),
             'total_cycles': total_cycles,
-            'avg_cycle_duration': round(avg_cycle_duration, 2),
-            'efficiency_percent': round(efficiency_percent, 2),
-            'period_start': since,
-            'period_end': timezone.now()
+            'avg_cycle_duration': round(avg_cycle_duration, 1),
+            'efficiency_percent': round(efficiency_percent, 1),
+            'period_start': start_date,
+            'period_end': end_date
         }
         
-        serializer = HeatingStatsSerializer(data)
+        serializer = HeatingStatsSerializer(stats_data)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def recent(self, request):
+        """Logs recientes"""
+        limit = int(request.query_params.get('limit', 20))
+        recent_logs = self.get_queryset()[:limit]
+        serializer = self.get_serializer(recent_logs, many=True)
         return Response(serializer.data)
 
 
-class TemperatureThresholdViewSet(viewsets.ModelViewSet):
-    """ViewSet para umbrales de temperatura"""
-    queryset = TemperatureThreshold.objects.all()
-    serializer_class = TemperatureThresholdSerializer
-
-
-class TemperatureProfileViewSet(viewsets.ModelViewSet):
-    """ViewSet para perfiles de temperatura"""
-    queryset = TemperatureProfile.objects.all()
-    serializer_class = TemperatureProfileSerializer
+class HeatingSettingsViewSet(viewsets.ModelViewSet):
+    """ViewSet para configuración de calefacción"""
     
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        
-        # Filtro por tipo de perfil
-        profile_type = self.request.query_params.get('type')
-        if profile_type:
-            queryset = queryset.filter(profile_type=profile_type)
-        
-        # Solo perfiles activos
-        active_only = self.request.query_params.get('active_only')
-        if active_only == 'true':
-            queryset = queryset.filter(is_active=True)
-        
-        return queryset
+    queryset = HeatingSettings.objects.all()
+    serializer_class = HeatingSettingsSerializer
     
     @action(detail=False, methods=['get'])
-    def active_profile(self, request):
-        """Obtiene el perfil activo actual"""
-        profile = TemperatureProfile.get_active_profile()
-        serializer = self.get_serializer(profile)
+    def current(self, request):
+        """Obtener configuración actual"""
+        settings = HeatingSettings.get_settings()
+        serializer = self.get_serializer(settings)
         return Response(serializer.data)
     
     @action(detail=False, methods=['post'])
-    def activate_profile(self, request):
-        """Activa un perfil específico"""
-        serializer = ProfileActivationSerializer(data=request.data)
+    def update_minimum_temperature(self, request):
+        """Actualizar solo la temperatura mínima"""
+        settings = HeatingSettings.get_settings()
+        new_temp = request.data.get('minimum_temperature')
         
-        if serializer.is_valid():
-            profile_id = serializer.validated_data['profile_id']
-            activate = serializer.validated_data['activate']
-            
+        if new_temp is not None:
             try:
-                profile = TemperatureProfile.objects.get(id=profile_id)
-                
-                if activate:
-                    # Desactivar otros perfiles
-                    TemperatureProfile.objects.update(is_active=False)
-                    # Activar el seleccionado
-                    profile.is_active = True
-                    profile.save()
+                new_temp = float(new_temp)
+                if 5 <= new_temp <= 25:
+                    settings.minimum_temperature = new_temp
+                    settings.save()
                     
-                    # Log del cambio
-                    HeatingLog.objects.create(
-                        controller_id='system',
-                        action='temperature_change',
-                        reason=f'Perfil activado: {profile.name}'
-                    )
-                    
-                    message = f'Perfil "{profile.name}" activado correctamente'
+                    serializer = self.get_serializer(settings)
+                    return Response({
+                        'message': f'Temperatura mínima actualizada a {new_temp}°C',
+                        'settings': serializer.data
+                    })
                 else:
-                    profile.is_active = False
-                    profile.save()
-                    message = f'Perfil "{profile.name}" desactivado'
-                
+                    return Response({
+                        'error': 'La temperatura debe estar entre 5°C y 25°C'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except (ValueError, TypeError):
                 return Response({
-                    'success': True,
-                    'message': message,
-                    'profile': TemperatureProfileSerializer(profile).data
-                })
-                
-            except TemperatureProfile.DoesNotExist:
-                return Response({
-                    'success': False,
-                    'error': 'Perfil no encontrado'
-                }, status=status.HTTP_404_NOT_FOUND)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=False, methods=['get'])
-    def vacation_mode(self, request):
-        """Activa/desactiva modo vacaciones"""
-        enable = request.query_params.get('enable', 'false').lower() == 'true'
-        
-        try:
-            vacation_profile = TemperatureProfile.objects.get(profile_type='vacation')
-            
-            if enable:
-                # Desactivar otros perfiles y activar vacaciones
-                TemperatureProfile.objects.update(is_active=False)
-                vacation_profile.is_active = True
-                vacation_profile.save()
-                
-                HeatingLog.objects.create(
-                    controller_id='system',
-                    action='temperature_change',
-                    reason='Modo vacaciones activado'
-                )
-                
-                message = 'Modo vacaciones activado'
-            else:
-                vacation_profile.is_active = False
-                vacation_profile.save()
-                
-                # Activar perfil normal por defecto
-                normal_profile = TemperatureProfile.objects.filter(
-                    profile_type='normal', is_default=True
-                ).first()
-                
-                if normal_profile:
-                    normal_profile.is_active = True
-                    normal_profile.save()
-                
-                HeatingLog.objects.create(
-                    controller_id='system',
-                    action='temperature_change',
-                    reason='Modo vacaciones desactivado'
-                )
-                
-                message = 'Modo vacaciones desactivado'
-            
-            return Response({
-                'success': True,
-                'message': message,
-                'vacation_active': enable
-            })
-            
-        except TemperatureProfile.DoesNotExist:
-            return Response({
-                'success': False,
-                'error': 'Perfil de vacaciones no encontrado'
-            }, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=False, methods=['get'])
-    def current_status(self, request):
-        """Estado actual del sistema de perfiles"""
-        active_profile = TemperatureProfile.get_active_profile()
-        current_time = timezone.now().time()
+                    'error': 'Temperatura inválida'
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         return Response({
-            'active_profile': TemperatureProfileSerializer(active_profile).data,
-            'current_target_temperature': active_profile.get_target_temperature(current_time),
-            'is_night_time': active_profile.is_night_time(current_time),
-            'minimum_protection_temp': active_profile.min_temperature,
-            'current_time': current_time.strftime('%H:%M'),
-        })
-    serializer_class = TemperatureThresholdSerializer
+            'error': 'Temperatura mínima requerida'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Vista para el template de configuración
+def settings_view(request):
+    """Vista para la página de configuración"""
+    context = {
+        'settings': HeatingSettings.get_settings(),
+        'schedules': HeatingSchedule.objects.filter(is_active=True).order_by('start_time'),
+    }
+    return render(request, 'dashboard/settings.html', context)
