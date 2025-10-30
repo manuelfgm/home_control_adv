@@ -1,6 +1,6 @@
 /*
  * Archivo de configuración para Sensor MQTT
- * Copia este archivo como config.h y modifica los valores
+ * ¡NO SUBIR ESTE ARCHIVO A GIT!
  */
 
 #ifndef CONFIG_H
@@ -17,10 +17,10 @@ const char* mqtt_user = "";                  // Usuario MQTT (opcional)
 const char* mqtt_pass = "";                  // Password MQTT (opcional)
 
 // ===== CONFIGURACIÓN DEL SENSOR =====
-const char* sensor_id = "room_sensor_01";   // ID único del sensor
+const char* sensor_id = "livingroom";   // ID único del sensor
 
 // ===== CONFIGURACIÓN DE PINES =====
-#define DHT_PIN 2                            // Pin del sensor DHT22
+#define DHT_PIN D3                            // Pin del sensor DHT22
 #define DHT_TYPE DHT22                       // Tipo de sensor DHT
 
 // ===== CONFIGURACIÓN DE TIMING =====

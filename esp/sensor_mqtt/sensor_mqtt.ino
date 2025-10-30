@@ -4,7 +4,7 @@
  * Envía datos via MQTT a Raspberry Pi
  */
 
-#include <WiFi.h>          // Para ESP32
+#include <ESP8266WiFi.h>          // Para ESP32
 // #include <ESP8266WiFi.h>  // Para ESP8266
 #include <PubSubClient.h>
 #include <DHT.h>
@@ -53,13 +53,13 @@ void loop() {
   
   unsigned long now = millis();
   
-  // Enviar datos de sensor cada 30 segundos
+  // Enviar datos de sensor
   if (now - lastMeasurement > measurementInterval) {
     sendSensorData();
     lastMeasurement = now;
   }
   
-  // Enviar estado cada 5 minutos
+  // Enviar estado 
   if (now - lastStatus > statusInterval) {
     sendStatus();
     lastStatus = now;
@@ -127,8 +127,10 @@ void reconnect() {
 
 void sendSensorData() {
   // Leer sensor DHT22
-  humidity = dht.readHumidity();
-  temperature = dht.readTemperature();
+  for(int i = 0; i < 3; ++i){
+    humidity = dht.readHumidity();
+    temperature = dht.readTemperature();
+  }
   
   // Verificar si la lectura falló
   if (isnan(humidity) || isnan(temperature)) {
@@ -150,6 +152,7 @@ void sendSensorData() {
   // Serializar y enviar
   String jsonString;
   serializeJson(doc, jsonString);
+  String topic_data = "home/sensors/livingroom/data";
   
   if (client.publish(topic_data.c_str(), jsonString.c_str())) {
     Serial.printf("Datos enviados: T=%.2f°C, H=%.2f%%\n", temperature, humidity);
@@ -172,6 +175,7 @@ void sendStatus() {
   // Serializar y enviar
   String jsonString;
   serializeJson(doc, jsonString);
+  String topic_status = "home/sensors/livingroom/status";
   
   if (client.publish(topic_status.c_str(), jsonString.c_str())) {
     Serial.println("Estado enviado");
