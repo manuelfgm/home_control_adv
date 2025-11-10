@@ -14,11 +14,14 @@ from datetime import datetime
 import paho.mqtt.client as mqtt
 from typing import Dict, Any
 import signal
+from dotenv import load_dotenv
 
-# Configuración
+# Cargar variables de entorno desde .env
+load_dotenv()
+
 DJANGO_BASE_URL = os.getenv('DJANGO_URL', 'http://localhost:8000')
-DJANGO_API_KEY = os.getenv('DJANGO_API_KEY', 'your-api-key')
-MQTT_HOST = os.getenv('MQTT_HOST', 'localhost')
+DJANGO_API_KEY = os.getenv('DJANGO_API_KEY', '3d1c941a71b38c07f126d4c0c33c3cb89448b27f')
+MQTT_HOST = os.getenv('MQTT_HOST', '192.168.1.100')
 MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
 MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
 MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', '')
@@ -28,7 +31,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/var/log/mqtt_bridge.log'),
+        logging.FileHandler('mqtt_bridge.log'),
         logging.StreamHandler()
     ]
 )

@@ -4,7 +4,7 @@
  * Recibe comandos via MQTT desde Raspberry Pi
  */
 
-#include <WiFi.h>          // Para ESP32
+#include <ESP8266WiFi.h>          // Para ESP32
 // #include <ESP8266WiFi.h>  // Para ESP8266
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -16,10 +16,13 @@ PubSubClient client(espClient);
 
 // Variables de estado
 bool heating_on = false;
-float target_temperature = 20.0;
+float temperature = 0.0;
 unsigned long lastStatus = 0;
 unsigned long heatingStartTime = 0;
 bool emergencyShutoff = false;
+
+String topic_command = "home/actuator/boiler/command";
+String topic_status = "home/actuator/boiler/data";
 
 void setup() {
   Serial.begin(115200);
@@ -28,8 +31,8 @@ void setup() {
   // Configurar pines
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);  // Relé apagado inicialmente
-  digitalWrite(LED_PIN, LOW);
+  digitalWrite(RELAY_PIN, HIGH);  // Relé apagado inicialmente
+  digitalWrite(LED_PIN, HIGH);
   
   // Conectar WiFi
   setup_wifi();
@@ -55,6 +58,9 @@ void loop() {
     sendStatus();
     lastStatus = now;
   }
+
+  // Seguridad
+  safetyCheck();
   
   delay(1000);
 }
@@ -78,6 +84,79 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
+void turnHeatingOn() {
+  if (!heating_on) {
+    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
+    heating_on = true;
+    Serial.println("Calefacción ENCENDIDA");
+  }
+}
+
+void turnHeatingOff() {
+  if (heating_on) {
+    digitalWrite(RELAY_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH);
+    heating_on = false;
+    Serial.println("Calefacción APAGADA");
+  }
+}
+
+void sendStatus() {
+  // Estado del actuador
+  uint32_t freeHeap = ESP.getFreeHeap();
+  
+  StaticJsonDocument<300> actuator_doc;
+  actuator_doc["actuator_id"] = actuator_id;
+  actuator_doc["is_heating"] = heating_on;
+  actuator_doc["timestamp"] = millis();
+  actuator_doc["wifi_signal"] = WiFi.RSSI();
+  actuator_doc["free_heap"] = freeHeap;
+  actuator_doc["temperature"] = temperature;
+  
+  String actuator_json;
+  serializeJson(actuator_doc, actuator_json);
+  
+  if (client.publish(topic_status.c_str(), actuator_json.c_str())) {
+    Serial.println("Estado de calefacción enviado");
+  }
+
+  // reinicia el sensor si queda poca memoria
+  if (freeHeap < 5000){
+    delay(10000);
+    ESP.restart();
+  }
+}
+
+void processHeatingCommand(String message) {
+  StaticJsonDocument<200> doc;
+  DeserializationError error = deserializeJson(doc, message);
+  
+  if (error) {
+    Serial.print("Error parseando JSON: ");
+    Serial.println(error.c_str());
+    return;
+  }
+  
+  float temperature = doc["temperature"];
+  String action = doc["action"];
+
+  // Evitar Temperatura máxima
+  if (temperature >= emergencyShutoffTemp){
+    turnHeatingOff();
+  } else{
+    // Extraer acción
+    if (action == "turn_on") {
+      turnHeatingOn();
+    } else if (action == "turn_off") {
+      turnHeatingOff();
+    }
+  }
+
+  // Enviar confirmación
+  sendStatus();
+}
+
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Mensaje recibido [");
   Serial.print(topic);
@@ -92,55 +171,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
   // Procesar comando si es para calefacción
   if (String(topic) == topic_command) {
     processHeatingCommand(message);
-  }
-}
-
-void processHeatingCommand(String message) {
-  StaticJsonDocument<200> doc;
-  DeserializationError error = deserializeJson(doc, message);
-  
-  if (error) {
-    Serial.print("Error parseando JSON: ");
-    Serial.println(error.c_str());
-    return;
-  }
-  
-  // Extraer acción
-  String action = doc["action"];
-  
-  if (action == "turn_on") {
-    turnHeatingOn();
-    if (doc.containsKey("target_temperature")) {
-      target_temperature = doc["target_temperature"];
-    }
-  } else if (action == "turn_off") {
-    turnHeatingOff();
-  } else if (action == "set_temperature") {
-    if (doc.containsKey("target_temperature")) {
-      target_temperature = doc["target_temperature"];
-      Serial.printf("Temperatura objetivo establecida: %.1f°C\n", target_temperature);
-    }
-  }
-  
-  // Enviar confirmación
-  sendStatus();
-}
-
-void turnHeatingOn() {
-  if (!heating_on) {
-    digitalWrite(RELAY_PIN, HIGH);
-    digitalWrite(LED_PIN, HIGH);
-    heating_on = true;
-    Serial.println("Calefacción ENCENDIDA");
-  }
-}
-
-void turnHeatingOff() {
-  if (heating_on) {
-    digitalWrite(RELAY_PIN, LOW);
-    digitalWrite(LED_PIN, LOW);
-    heating_on = false;
-    Serial.println("Calefacción APAGADA");
   }
 }
 
@@ -169,39 +199,6 @@ void reconnect() {
   }
 }
 
-void sendStatus() {
-  // Estado del actuador
-  StaticJsonDocument<300> actuator_doc;
-  actuator_doc["actuator_id"] = actuator_id;
-  actuator_doc["online"] = true;
-  actuator_doc["heating_on"] = heating_on;
-  actuator_doc["wifi_signal"] = WiFi.RSSI();
-  actuator_doc["free_heap"] = ESP.getFreeHeap();
-  actuator_doc["uptime"] = millis();
-  actuator_doc["ip_address"] = WiFi.localIP().toString();
-  
-  String actuator_json;
-  serializeJson(actuator_doc, actuator_json);
-  
-  if (client.publish(topic_actuator_status.c_str(), actuator_json.c_str())) {
-    Serial.println("Estado del actuador enviado");
-  }
-  
-  // Estado de calefacción para Django
-  StaticJsonDocument<200> heating_doc;
-  heating_doc["is_heating"] = heating_on;
-  heating_doc["target_temperature"] = target_temperature;
-  heating_doc["mode"] = "mqtt_control";
-  heating_doc["timestamp"] = millis();
-  heating_doc["source"] = actuator_id;
-  
-  String heating_json;
-  serializeJson(heating_doc, heating_json);
-  
-  if (client.publish(topic_status.c_str(), heating_json.c_str())) {
-    Serial.println("Estado de calefacción enviado");
-  }
-}
 
 // Función de seguridad - apagar calefacción si pierde conexión
 void checkWiFiConnection() {
@@ -216,7 +213,7 @@ void safetyCheck() {
   static unsigned long lastSafetyCheck = 0;
   unsigned long now = millis();
   
-  if (now - lastSafetyCheck > 10000) { // Cada 10 segundos
+  if (now - lastSafetyCheck > 60000) { // Cada 60 segundos
     checkWiFiConnection();
     
     // Verificar si no hemos recibido comandos en mucho tiempo
@@ -226,5 +223,11 @@ void safetyCheck() {
     }
     
     lastSafetyCheck = now;
+  }
+
+  // Peligro de desbordamiento
+  if (now >= overflowRestart){
+    delay(10000);
+    ESP.restart();
   }
 }
