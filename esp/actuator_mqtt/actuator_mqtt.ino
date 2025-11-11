@@ -138,7 +138,7 @@ void processHeatingCommand(String message) {
     return;
   }
   
-  float temperature = doc["temperature"];
+  temperature = doc["temperature"];
   String action = doc["action"];
 
   // Evitar Temperatura máxima
