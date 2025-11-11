@@ -18,11 +18,6 @@ DHT dht(DHT_PIN, DHT_TYPE);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// Variables de medición
-float temperature = 0.0;
-float humidity = 0.0;
-bool sensorError = false;
-
 // Variables de timing
 unsigned long lastMeasurement = 0;
 unsigned long lastStatus = 0;
@@ -59,12 +54,12 @@ void loop() {
     lastMeasurement = now;
   }
   
-  // Enviar estado 
-  if (now - lastStatus > statusInterval) {
-    sendStatus();
-    lastStatus = now;
+  // Peligro de desbordamiento
+  if (now >= overflowRestart){
+    delay(10000);
+    ESP.restart();
   }
-  
+
   delay(1000);
 }
 
@@ -113,8 +108,8 @@ void reconnect() {
       String command_topic = "home/sensors/" + String(sensor_id) + "/command";
       client.subscribe(command_topic.c_str());
       
-      // Enviar mensaje de conexión
-      sendStatus();
+      // Enviar mensaje
+      sendSensorData();
       
     } else {
       Serial.print("falló, rc=");
@@ -126,6 +121,10 @@ void reconnect() {
 }
 
 void sendSensorData() {
+  float humidity = 0.0;
+  float temperature = 0.0;
+  bool sensorError = false;
+
   // Leer sensor DHT22
   for(int i = 0; i < 3; ++i){
     humidity = dht.readHumidity();
@@ -140,6 +139,7 @@ void sendSensorData() {
   }
   
   sensorError = false;
+  uint32_t freeHeap = ESP.getFreeHeap();
   
   // Crear JSON con los datos
   StaticJsonDocument<200> doc;
@@ -148,6 +148,8 @@ void sendSensorData() {
   doc["humidity"] = humidity;
   doc["timestamp"] = millis();
   doc["wifi_signal"] = WiFi.RSSI();
+  doc["free_heap"] = freeHeap;
+  doc["sensor_error"] = sensorError;
   
   // Serializar y enviar
   String jsonString;
@@ -159,44 +161,11 @@ void sendSensorData() {
   } else {
     Serial.println("Error enviando datos MQTT");
   }
-}
 
-void sendStatus() {
-  // Crear JSON con el estado del dispositivo
-  StaticJsonDocument<300> doc;
-  doc["sensor_id"] = sensor_id;
-  doc["online"] = true;
-  doc["wifi_signal"] = WiFi.RSSI();
-  doc["free_heap"] = ESP.getFreeHeap();
-  doc["uptime"] = millis();
-  doc["sensor_error"] = sensorError;
-  doc["ip_address"] = WiFi.localIP().toString();
-  
-  // Serializar y enviar
-  String jsonString;
-  serializeJson(doc, jsonString);
-  String topic_status = "home/sensors/livingroom/status";
-  
-  if (client.publish(topic_status.c_str(), jsonString.c_str())) {
-    Serial.println("Estado enviado");
-  } else {
-    Serial.println("Error enviando estado MQTT");
+  // reinicia el sensor si queda poca memoria
+  if (freeHeap < 5000){
+    delay(10000);
+    ESP.restart();
   }
 }
 
-// Función para enviar comandos de calefacción (si es actuador)
-void sendHeatingCommand(bool turn_on, float target_temp) {
-  StaticJsonDocument<200> doc;
-  doc["action"] = turn_on ? "turn_on" : "turn_off";
-  doc["target_temperature"] = target_temp;
-  doc["timestamp"] = millis();
-  doc["source"] = sensor_id;
-  
-  String jsonString;
-  serializeJson(doc, jsonString);
-  
-  const char* heating_topic = "home/heating/control";
-  if (client.publish(heating_topic, jsonString.c_str())) {
-    Serial.printf("Comando calefacción enviado: %s\n", turn_on ? "ON" : "OFF");
-  }
-}
