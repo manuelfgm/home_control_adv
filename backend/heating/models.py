@@ -19,7 +19,7 @@ class HeatingSettings(models.Model):
     
     # Tolerancia/histéresis
     hysteresis = models.FloatField(
-        default=0.5,
+        default=0.2,
         validators=[MinValueValidator(0.1), MaxValueValidator(0.5)],
         help_text="Diferencia de temperatura para evitar ciclos on/off constantes (°C)"
     )
@@ -58,7 +58,13 @@ class HeatingSchedule(models.Model):
     ]
     
     name = models.CharField(max_length=100, help_text="Nombre del horario")
-    day_of_week = models.IntegerField(choices=WEEKDAYS, help_text="Día de la semana")
+    
+    # Días de la semana (múltiples días separados por comas)
+    weekdays = models.CharField(
+        max_length=20,
+        default="0,1,2,3,4",  # Por defecto laborables
+        help_text="Días de la semana separados por comas (ej: '0,1,2,3,4' para L-V)"
+    )
     
     # Horario
     start_time = models.TimeField(help_text="Hora de inicio")
@@ -89,12 +95,45 @@ class HeatingSchedule(models.Model):
     class Meta:
         verbose_name = "Horario de Calefacción"
         verbose_name_plural = "Horarios de Calefacción"
-        ordering = ['day_of_week', 'start_time']
-        unique_together = ['day_of_week', 'start_time', 'end_time', 'settings']
+        ordering = ['start_time']
     
     def __str__(self):
-        day_name = dict(self.WEEKDAYS)[self.day_of_week]
-        return f"{day_name} {self.start_time}-{self.end_time} ({self.target_temperature}°C)"
+        days_display = self.get_weekdays_display()
+        return f"{days_display} {self.start_time}-{self.end_time} ({self.target_temperature}°C)"
+    
+    def get_weekdays_list(self):
+        """Obtiene la lista de días como integers"""
+        if not self.weekdays:
+            return []
+        return [int(day.strip()) for day in self.weekdays.split(',') if day.strip().isdigit()]
+    
+    def get_weekdays_display(self):
+        """Obtiene la representación legible de los días"""
+        weekdays_dict = dict(self.WEEKDAYS)
+        days = self.get_weekdays_list()
+        
+        if not days:
+            return "Sin días"
+        
+        # Casos especiales para mostrar nombres más amigables
+        if set(days) == {0, 1, 2, 3, 4}:  # Lunes a Viernes
+            return "Laborables"
+        elif set(days) == {5, 6}:  # Sábado y Domingo
+            return "Fines de semana"
+        elif len(days) == 7:  # Todos los días
+            return "Todos los días"
+        elif len(days) == 1:  # Un solo día
+            return weekdays_dict.get(days[0], str(days[0]))
+        else:  # Múltiples días específicos
+            day_names = [weekdays_dict.get(day, str(day)) for day in sorted(days)]
+            return ", ".join(day_names)
+    
+    def set_weekdays_from_list(self, days_list):
+        """Establece los días desde una lista de integers"""
+        if isinstance(days_list, list):
+            self.weekdays = ','.join(str(day) for day in sorted(days_list))
+        else:
+            self.weekdays = str(days_list)
     
     def is_active_now(self):
         """Verifica si este horario está activo en este momento"""
@@ -105,7 +144,9 @@ class HeatingSchedule(models.Model):
         current_weekday = now.weekday()  # 0=Monday, 6=Sunday
         current_time = now.time()
         
-        if current_weekday != self.day_of_week:
+        # Verificar si el día actual está en la lista de días del horario
+        weekdays_list = self.get_weekdays_list()
+        if current_weekday not in weekdays_list:
             return False
         
         # Manejar horarios que cruzan medianoche
@@ -133,6 +174,45 @@ class HeatingSchedule(models.Model):
         # Si no hay horario activo, usar temperatura por defecto
         settings = HeatingSettings.get_current_settings()
         return settings.default_temperature if settings else 18.0
+    
+    @classmethod
+    def create_workdays_schedule(cls, name, start_time, end_time, temperature, settings=None):
+        """Crear horario para días laborables (L-V)"""
+        schedule = cls.objects.create(
+            name=name,
+            weekdays="0,1,2,3,4",  # Lunes a Viernes
+            start_time=start_time,
+            end_time=end_time,
+            target_temperature=temperature,
+            settings=settings
+        )
+        return schedule
+    
+    @classmethod
+    def create_weekend_schedule(cls, name, start_time, end_time, temperature, settings=None):
+        """Crear horario para fines de semana (S-D)"""
+        schedule = cls.objects.create(
+            name=name,
+            weekdays="5,6",  # Sábado y Domingo
+            start_time=start_time,
+            end_time=end_time,
+            target_temperature=temperature,
+            settings=settings
+        )
+        return schedule
+    
+    @classmethod
+    def create_daily_schedule(cls, name, start_time, end_time, temperature, settings=None):
+        """Crear horario para todos los días"""
+        schedule = cls.objects.create(
+            name=name,
+            weekdays="0,1,2,3,4,5,6",  # Todos los días
+            start_time=start_time,
+            end_time=end_time,
+            target_temperature=temperature,
+            settings=settings
+        )
+        return schedule
 
 
 class HeatingLog(models.Model):

@@ -25,18 +25,22 @@ class HeatingSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(HeatingSchedule)
 class HeatingScheduleAdmin(admin.ModelAdmin):
-    list_display = ['name', 'get_day_display', 'start_time', 'end_time', 'target_temperature', 'is_active']
-    list_filter = ['day_of_week', 'is_active', 'settings']
-    search_fields = ['name']
-    readonly_fields = ['created_at', 'updated_at']
-    ordering = ['day_of_week', 'start_time']
+    list_display = ['name', 'get_weekdays_display', 'start_time', 'end_time', 'target_temperature', 'is_active']
+    list_filter = ['is_active', 'settings']
+    search_fields = ['name', 'weekdays']
+    readonly_fields = ['created_at', 'updated_at', 'weekdays_display_admin']
+    ordering = ['start_time']
     
     fieldsets = (
         ('Información General', {
             'fields': ('name', 'settings', 'is_active')
         }),
+        ('Días de la Semana', {
+            'fields': ('weekdays', 'weekdays_display_admin'),
+            'description': 'Días separados por comas: 0=Lunes, 1=Martes, ..., 6=Domingo. Ejemplos: "0,1,2,3,4" (laborables), "5,6" (fines de semana)'
+        }),
         ('Horario', {
-            'fields': ('day_of_week', 'start_time', 'end_time')
+            'fields': ('start_time', 'end_time')
         }),
         ('Temperatura', {
             'fields': ('target_temperature',)
@@ -47,9 +51,10 @@ class HeatingScheduleAdmin(admin.ModelAdmin):
         }),
     )
     
-    def get_day_display(self, obj):
-        return obj.get_day_of_week_display()
-    get_day_display.short_description = 'Día'
+    def weekdays_display_admin(self, obj):
+        """Mostrar días de forma legible en el admin"""
+        return obj.get_weekdays_display()
+    weekdays_display_admin.short_description = 'Días (legible)'
 
 
 @admin.register(HeatingLog)

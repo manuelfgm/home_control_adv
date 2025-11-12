@@ -83,12 +83,24 @@ class HeatingScheduleViewSet(viewsets.ModelViewSet):
     def by_day(self, request):
         """Obtener horarios agrupados por día"""
         schedules_by_day = {}
+        
+        # Inicializar todos los días
         for day_num, day_name in HeatingSchedule.WEEKDAYS:
-            schedules = self.get_queryset().filter(
-                day_of_week=day_num, 
-                is_active=True
-            )
-            schedules_by_day[day_name] = self.get_serializer(schedules, many=True).data
+            schedules_by_day[day_name] = []
+        
+        # Obtener todos los horarios activos
+        all_schedules = self.get_queryset().filter(is_active=True)
+        
+        # Agrupar horarios por día
+        for schedule in all_schedules:
+            weekdays_list = schedule.get_weekdays_list()
+            schedule_data = self.get_serializer(schedule).data
+            
+            # Agregar este horario a todos los días que le corresponden
+            for day_num in weekdays_list:
+                if 0 <= day_num <= 6:
+                    day_name = dict(HeatingSchedule.WEEKDAYS)[day_num]
+                    schedules_by_day[day_name].append(schedule_data)
         
         return Response(schedules_by_day)
 
