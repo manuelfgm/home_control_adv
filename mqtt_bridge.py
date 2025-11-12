@@ -7,7 +7,6 @@ Escucha mensajes MQTT y los envía a Django via API REST
 import json
 import logging
 import time
-import sys
 import os
 import requests
 from datetime import datetime
@@ -59,12 +58,10 @@ class MQTTDjangoBridge:
         
         # Mapeo de topics MQTT a endpoints Django
         self.topic_mapping = {
+            # Nuevos topics de sensor_mqtt y actuator_mqtt
             'home/sensors/+/data': self.handle_sensor_data,
-            'home/sensors/+/status': self.handle_sensor_status,
-            'home/heating/control': self.handle_heating_control,
-            'home/heating/status': self.handle_heating_status,
-            'home/room/temperature': self.handle_temperature,
-            'home/room/humidity': self.handle_humidity,
+            'home/actuator/+/data': self.handle_actuator_data,
+            'home/actuator/+/command': self.handle_actuator_command
         }
 
     def on_connect(self, client, userdata, flags, rc):
@@ -116,7 +113,7 @@ class MQTTDjangoBridge:
             url = f"{DJANGO_BASE_URL}/{endpoint}/"
             response = self.session.post(url, json=data, timeout=10)
             
-            if response.status_code in [200, 201]:
+            if response.status_code in [200, 201, 203]:
                 logger.info(f"Datos enviados exitosamente a {endpoint}")
                 return True
             else:
@@ -130,26 +127,58 @@ class MQTTDjangoBridge:
     def handle_sensor_data(self, topic: str, payload: str):
         """Maneja datos de sensores: home/sensors/SENSOR_ID/data"""
         try:
-            # Extraer sensor_id del topic
-            sensor_id = topic.split('/')[2]
+            # Validar que el payload es JSON válido
             data = json.loads(payload)
+            sensor_id = data.get('sensor_id', topic.split('/')[2])
             
-            # Preparar datos para Django
-            django_data = {
-                'sensor_id': sensor_id,
-                'temperature': data.get('temperature'),
-                'humidity': data.get('humidity'),
-                'timestamp': data.get('timestamp', datetime.now().isoformat()),
-                'source': 'mqtt_bridge'
-            }
+            logger.info(f"Reenviando datos originales del sensor {sensor_id}")
             
-            # Enviar a Django
-            self.send_to_django('sensors/api/readings', django_data)
+            # Enviar el JSON original tal como viene del sensor al backend
+            self.send_to_django_raw('sensors/api/readings', payload)
             
         except json.JSONDecodeError:
             logger.error(f"Payload JSON inválido: {payload}")
         except Exception as e:
             logger.error(f"Error manejando datos de sensor: {e}")
+
+    def handle_actuator_data(self, topic: str, payload: str):
+        """Maneja datos de actuadores: home/actuator/ACTUATOR_ID/data"""
+        try:
+            # Validar que el payload es JSON válido
+            data = json.loads(payload)
+            actuator_id = data.get('actuator_id', topic.split('/')[2])
+            
+            logger.info(f"Reenviando datos originales del actuador {actuator_id}")
+            
+            # Enviar el JSON original tal como viene del actuador al backend
+            self.send_to_django_raw('actuator/api/status', payload)
+            
+            # Opcional: También enviar como dato de sensor si tenemos temperatura
+            # (esto mantiene compatibilidad con el sistema existente)
+            if data.get('temperature') is not None:
+                sensor_data = {
+                    'sensor_id': f'actuator_{actuator_id}',
+                    'temperature': data.get('temperature'),
+                    'timestamp': data.get('timestamp', datetime.now().isoformat()),
+                    'source': 'mqtt_bridge_actuator'
+                }
+                self.send_to_django('sensors/api/readings', sensor_data)
+            
+        except json.JSONDecodeError:
+            logger.error(f"Payload JSON inválido para actuador: {payload}")
+        except Exception as e:
+            logger.error(f"Error manejando datos de actuador: {e}")
+
+    def handle_actuator_command(self, topic: str, payload: str):
+        """Maneja datos de actuadores: home/actuator/ACTUATOR_ID/command"""
+        try:
+            actuator_id = topic.split('/')[2]
+            data = json.loads(payload)
+
+            logger.info(f"Comando enviado al actuador {actuator_id}: {data}")
+
+        except Exception as e:
+            logger.error(f"Error manejando comando de actuador: {e}")
 
     def handle_sensor_status(self, topic: str, payload: str):
         """Maneja estado de sensores: home/sensors/SENSOR_ID/status"""
@@ -171,77 +200,6 @@ class MQTTDjangoBridge:
         except Exception as e:
             logger.error(f"Error manejando estado de sensor: {e}")
 
-    def handle_heating_control(self, topic: str, payload: str):
-        """Maneja comandos de control de calefacción"""
-        try:
-            data = json.loads(payload)
-            
-            django_data = {
-                'action': data.get('action', 'unknown'),
-                'target_temperature': data.get('target_temperature'),
-                'mode': data.get('mode', 'manual'),
-                'timestamp': datetime.now().isoformat(),
-                'source': 'mqtt_bridge'
-            }
-            
-            self.send_to_django('heating/api/control', django_data)
-            
-        except Exception as e:
-            logger.error(f"Error manejando control de calefacción: {e}")
-
-    def handle_heating_status(self, topic: str, payload: str):
-        """Maneja estado de calefacción"""
-        try:
-            data = json.loads(payload)
-            
-            django_data = {
-                'is_heating': data.get('is_heating', False),
-                'current_temperature': data.get('current_temperature'),
-                'target_temperature': data.get('target_temperature'),
-                'mode': data.get('mode', 'auto'),
-                'timestamp': datetime.now().isoformat(),
-                'source': 'mqtt_bridge'
-            }
-            
-            self.send_to_django('heating/api/logs', django_data)
-            
-        except Exception as e:
-            logger.error(f"Error manejando estado de calefacción: {e}")
-
-    def handle_temperature(self, topic: str, payload: str):
-        """Maneja temperaturas simples"""
-        try:
-            temperature = float(payload)
-            
-            django_data = {
-                'sensor_id': 'room_main',
-                'temperature': temperature,
-                'timestamp': datetime.now().isoformat(),
-                'source': 'mqtt_bridge'
-            }
-            
-            self.send_to_django('sensors/api/readings', django_data)
-            
-        except ValueError:
-            logger.error(f"Temperatura inválida: {payload}")
-
-    def handle_humidity(self, topic: str, payload: str):
-        """Maneja humedad simple"""
-        try:
-            humidity = float(payload)
-            
-            django_data = {
-                'sensor_id': 'room_main',
-                'humidity': humidity,
-                'timestamp': datetime.now().isoformat(),
-                'source': 'mqtt_bridge'
-            }
-            
-            self.send_to_django('sensors/api/readings', django_data)
-            
-        except ValueError:
-            logger.error(f"Humedad inválida: {payload}")
-
     def run(self):
         """Ejecutar el bridge"""
         logger.info("Iniciando MQTT to Django Bridge...")
@@ -252,6 +210,7 @@ class MQTTDjangoBridge:
             
             logger.info(f"Bridge ejecutándose. Conectado a MQTT: {MQTT_HOST}:{MQTT_PORT}")
             logger.info(f"Django URL: {DJANGO_BASE_URL}")
+            logger.info(f"Topics suscritos: {list(self.topic_mapping.keys())}")
             
             while self.running:
                 time.sleep(1)
