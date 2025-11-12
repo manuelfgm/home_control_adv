@@ -107,11 +107,18 @@ class MQTTDjangoBridge:
                 return False
         return True
 
+    def clean_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Limpia el diccionario eliminando campos con valor None"""
+        return {k: v for k, v in data.items() if v is not None}
+
     def send_to_django(self, endpoint: str, data: Dict[str, Any]) -> bool:
         """Envía datos a Django via API REST"""
         try:
+            # Limpiar datos antes de enviar
+            clean_data = self.clean_data(data)
+            
             url = f"{DJANGO_BASE_URL}/{endpoint}/"
-            response = self.session.post(url, json=data, timeout=10)
+            response = self.session.post(url, json=clean_data, timeout=10)
             
             if response.status_code in [200, 201, 203]:
                 logger.info(f"Datos enviados exitosamente a {endpoint}")
@@ -127,14 +134,26 @@ class MQTTDjangoBridge:
     def handle_sensor_data(self, topic: str, payload: str):
         """Maneja datos de sensores: home/sensors/SENSOR_ID/data"""
         try:
-            # Validar que el payload es JSON válido
+            # Convertir JSON a diccionario Python
             data = json.loads(payload)
             sensor_id = data.get('sensor_id', topic.split('/')[2])
             
-            logger.info(f"Reenviando datos originales del sensor {sensor_id}")
+            logger.info(f"Procesando datos del sensor {sensor_id}")
             
-            # Enviar el JSON original tal como viene del sensor al backend
-            self.send_to_django_raw('sensors/api/readings', payload)
+            # Preparar diccionario con todos los campos del sensor
+            sensor_dict = {
+                'sensor_id': data.get('sensor_id', sensor_id),
+                'temperature': data.get('temperature'),
+                'humidity': data.get('humidity'),
+                'timestamp': data.get('timestamp'),
+                'wifi_signal': data.get('wifi_signal'),
+                'free_heap': data.get('free_heap'),
+                'sensor_error': data.get('sensor_error', False),
+                'source': 'mqtt_bridge'
+            }
+            
+            # Enviar diccionario a Django
+            self.send_to_django('sensors/api/readings', sensor_dict)
             
         except json.JSONDecodeError:
             logger.error(f"Payload JSON inválido: {payload}")
@@ -144,14 +163,25 @@ class MQTTDjangoBridge:
     def handle_actuator_data(self, topic: str, payload: str):
         """Maneja datos de actuadores: home/actuator/ACTUATOR_ID/data"""
         try:
-            # Validar que el payload es JSON válido
+            # Convertir JSON a diccionario Python
             data = json.loads(payload)
             actuator_id = data.get('actuator_id', topic.split('/')[2])
             
-            logger.info(f"Reenviando datos originales del actuador {actuator_id}")
+            logger.info(f"Procesando datos del actuador {actuator_id}")
             
-            # Enviar el JSON original tal como viene del actuador al backend
-            self.send_to_django_raw('actuator/api/status', payload)
+            # Preparar diccionario con todos los campos del actuador
+            actuator_dict = {
+                'actuator_id': data.get('actuator_id', actuator_id),
+                'is_heating': data.get('is_heating', False),
+                'timestamp': data.get('timestamp'),
+                'wifi_signal': data.get('wifi_signal'),
+                'free_heap': data.get('free_heap'),
+                'temperature': data.get('temperature'),
+                'source': 'mqtt_bridge'
+            }
+            
+            # Enviar diccionario a Django
+            self.send_to_django('actuator/api/status', actuator_dict)
             
             # Opcional: También enviar como dato de sensor si tenemos temperatura
             # (esto mantiene compatibilidad con el sistema existente)
