@@ -1,0 +1,67 @@
+# ======================================
+# Home Control Advanced - Requirements
+# ======================================
+# 
+# Este archivo contiene todas las dependencias necesarias para:
+# 1. Django backend con API REST
+# 2. MQTT Bridge para comunicación con dispositivos ESP
+# 3. Sistema completo de sensores y actuadores
+#
+# Instalación: pip install -r requirements.txt
+
+# Core Django Framework
+Django==5.2.8
+djangorestframework==3.16.1
+asgiref==3.10.0
+sqlparse==0.5.3
+
+# MQTT Bridge Dependencies
+paho-mqtt==2.1.0          # Cliente MQTT para comunicación con ESP8266/ESP32
+requests==2.32.5          # HTTP client para enviar datos a Django
+python-dotenv==1.2.1      # Cargar variables de entorno desde .env
+
+# HTTP Dependencies (requests dependencies)
+certifi==2025.11.12
+charset-normalizer==3.4.4
+idna==3.11
+urllib3==2.5.0
+
+# ======================================
+# Dependencias Opcionales (descomenta si necesitas)
+# ======================================
+
+# Para frontend web con CORS
+# django-cors-headers>=4.3.0
+
+# Utilidades de desarrollo
+# django-extensions>=3.2.0
+
+# Base de datos PostgreSQL (para producción)
+# psycopg2-binary>=2.9.0
+
+# Servidor de producción
+# gunicorn>=21.2.0
+
+# Testing
+# pytest>=7.4.0
+# pytest-django>=4.6.0
+
+# ======================================
+# Instrucciones de instalación:
+# ======================================
+# 
+# 1. Crear entorno virtual:
+#    python3 -m venv .venv
+#    source .venv/bin/activate
+#
+# 2. Instalar dependencias:
+#    pip install -r requirements.txt
+#
+# 3. Configurar Django:
+#    cd backend
+#    python manage.py migrate
+#    python manage.py createsuperuser
+#
+# 4. Ejecutar:
+#    python manage.py runserver  # Django
+#    python ../mqtt_bridge.py    # MQTT Bridge

@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DJANGO_BASE_URL = os.getenv('DJANGO_URL', 'http://localhost:8000')
-DJANGO_API_KEY = os.getenv('DJANGO_API_KEY', '3d1c941a71b38c07f126d4c0c33c3cb89448b27f')
-MQTT_HOST = os.getenv('MQTT_HOST', '192.168.1.100')
+DJANGO_API_KEY = os.getenv('DJANGO_API_KEY', 'your_api_key_here')
+MQTT_HOST = os.getenv('MQTT_HOST', 'localhost')
 MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
 MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
 MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', '')
