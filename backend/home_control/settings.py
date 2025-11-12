@@ -10,22 +10,29 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+# Buscar el archivo .env en el directorio raíz del proyecto (dos niveles arriba)
+env_path = BASE_DIR.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-j#hmu7#4p$)+qhj6r3f*d&m*&yoj*k9_p3#6--9qj1k1q#ab2#'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-j#hmu7#4p$)+qhj6r3f*d&m*&yoj*k9_p3#6--9qj1k1q#ab2#')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes', 'on')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 # Application definition
@@ -75,12 +82,28 @@ WSGI_APPLICATION = 'home_control.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Configuración de base de datos usando variables de entorno
+DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite3')
+
+if DB_ENGINE == 'postgresql':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('POSTGRES_DB', 'home_control'),
+            'USER': os.getenv('POSTGRES_USER', 'postgres'),
+            'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
+            'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
+            'PORT': os.getenv('POSTGRES_PORT', '5432'),
+        }
     }
-}
+else:
+    # SQLite por defecto
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -105,9 +128,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = os.getenv('LANGUAGE_CODE', 'es-es')
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = os.getenv('TIME_ZONE', 'Europe/Madrid')
 
 USE_I18N = True
 
@@ -134,3 +157,59 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
 }
+
+# MQTT Configuration (para compatibilidad con mqtt_bridge)
+MQTT_BROKER = os.getenv('MQTT_HOST', 'localhost')
+MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
+MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
+MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', '')
+
+# Logging configuration
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': LOG_LEVEL,
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR.parent / 'logs' / 'django.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': LOG_LEVEL,
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'home_control': {
+            'handlers': ['console', 'file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+    },
+}
+
+# Crear directorio de logs si no existe
+(BASE_DIR.parent / 'logs').mkdir(exist_ok=True)
