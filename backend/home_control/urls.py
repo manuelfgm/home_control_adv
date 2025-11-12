@@ -22,4 +22,5 @@ urlpatterns = [
     path('sensors/', include('sensors.urls')),
     path('actuators/', include('actuators.urls')),
     path('actuator/', include(('actuators.urls', 'actuator'), namespace='actuator')),  # Alias con namespace diferente
+    path('heating/', include('heating.urls')),
 ]

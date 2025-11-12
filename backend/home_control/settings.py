@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'sensors',
     'actuators',
+    'heating',
 ]
 
 MIDDLEWARE = [
