@@ -5,7 +5,7 @@
 set -e
 
 # Variables de configuración
-PROJECT_DIR="/home/manu/personalcode/home_control_adv"
+PROJECT_DIR="/home/manu/code/home_control_adv"
 VENV_DIR="$PROJECT_DIR/.venv"
 DJANGO_DIR="$PROJECT_DIR/backend"
 USER="manu"
