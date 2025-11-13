@@ -163,34 +163,33 @@ class MQTTDjangoBridge:
     def handle_actuator_data(self, topic: str, payload: str):
         """
         Maneja datos de actuadores: home/actuator/ACTUATOR_ID/data
-        Ahora usa ActuatorReadings para evitar bucles infinitos de control
+        Usa ActuatorStatus - este endpoint NO dispara control automático
         """
         try:
             # Convertir JSON a diccionario Python
             data = json.loads(payload)
             actuator_id = data.get('actuator_id', topic.split('/')[2])
             
-            logger.info(f"Procesando lectura del actuador {actuator_id} (sin disparar control automático)")
+            logger.info(f"Procesando estado del actuador {actuator_id} (sin disparar control automático)")
             
-            # Preparar diccionario para ActuatorReadings (NO dispara control automático)
-            reading_dict = {
+            # Preparar diccionario para ActuatorStatus (NO dispara control automático)
+            status_dict = {
                 'actuator_id': data.get('actuator_id', actuator_id),
                 'is_heating': data.get('is_heating', False),
                 'timestamp': data.get('timestamp'),
                 'wifi_signal': data.get('wifi_signal'),
                 'free_heap': data.get('free_heap'),
                 'temperature': data.get('temperature'),
-                'source': 'mqtt_bridge',
-                'reading_type': 'periodic_reading'  # Marca como lectura periódica, no comando
+                'source': 'mqtt_bridge'
             }
             
-            # Enviar a ActuatorReadings (NO dispara control automático)
-            success = self.send_to_django('actuators/api/readings', reading_dict)
+            # Enviar a ActuatorStatus (NO dispara control automático)
+            success = self.send_to_django('actuators/api/status', status_dict)
             
             if success:
-                logger.info(f"✅ Lectura de actuador {actuator_id} registrada (sin bucle)")
+                logger.info(f"✅ Estado de actuador {actuator_id} registrado (sin bucle)")
             else:
-                logger.error(f"❌ Error registrando lectura de actuador {actuator_id}")
+                logger.error(f"❌ Error registrando estado de actuador {actuator_id}")
             
         except json.JSONDecodeError:
             logger.error(f"Payload JSON inválido para actuador: {payload}")

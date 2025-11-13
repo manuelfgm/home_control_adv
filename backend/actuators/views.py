@@ -1,8 +1,8 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import ActuatorStatus, ActuatorReadings
-from .serializers import ActuatorStatusSerializer, ActuatorReadingsSerializer
+from .models import ActuatorStatus
+from .serializers import ActuatorStatusSerializer
 
 
 class ActuatorStatusViewSet(viewsets.ModelViewSet):
@@ -96,65 +96,4 @@ class ActuatorStatusViewSet(viewsets.ModelViewSet):
         
         statuses = ActuatorStatus.objects.filter(actuator_id=actuator_id)
         serializer = self.get_serializer(statuses, many=True)
-        return Response(serializer.data)
-
-
-class ActuatorReadingsViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para lecturas continuas de actuadores (NO dispara control automático)
-    Endpoints:
-    - GET /actuators/api/readings/ - Listar todas las lecturas
-    - POST /actuators/api/readings/ - Crear nueva lectura (usado por mqtt_bridge)
-    - GET /actuators/api/readings/{id}/ - Detalle de una lectura
-    """
-    queryset = ActuatorReadings.objects.all()
-    serializer_class = ActuatorReadingsSerializer
-    
-    def create(self, request, *args, **kwargs):
-        """
-        Crear nueva lectura de actuador (sin disparar control automático).
-        """
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        # Crear la lectura del actuador (NO dispara control automático)
-        reading = serializer.save()
-        
-        return Response(
-            ActuatorReadingsSerializer(reading).data, 
-            status=status.HTTP_201_CREATED
-        )
-    
-    @action(detail=False, methods=['get'])
-    def latest(self, request):
-        """
-        Obtener última lectura de cada actuador.
-        GET /actuators/api/readings/latest/
-        """
-        # Obtener lista de actuadores únicos
-        actuator_ids = ActuatorReadings.objects.values_list('actuator_id', flat=True).distinct()
-        
-        latest_readings = {}
-        for actuator_id in actuator_ids:
-            latest = ActuatorReadings.objects.filter(actuator_id=actuator_id).first()
-            if latest:
-                latest_readings[actuator_id] = ActuatorReadingsSerializer(latest).data
-        
-        return Response(latest_readings)
-    
-    @action(detail=False, methods=['get'])
-    def by_actuator(self, request):
-        """
-        Filtrar lecturas por actuator_id.
-        GET /actuators/api/readings/by_actuator/?actuator_id=boiler
-        """
-        actuator_id = request.query_params.get('actuator_id')
-        if not actuator_id:
-            return Response(
-                {'error': 'actuator_id parameter is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        readings = ActuatorReadings.objects.filter(actuator_id=actuator_id)
-        serializer = self.get_serializer(readings, many=True)
         return Response(serializer.data)
