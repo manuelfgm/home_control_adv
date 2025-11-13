@@ -8,8 +8,8 @@ Wants=network.target
 Type=exec
 User=manu
 Group=manu
-WorkingDirectory=/home/manu/code/home_control_adv
-ExecStart=/home/manu/code/home_control_adv/start_backend.sh
+WorkingDirectory=/home/manu/personalcode/home_control_adv
+ExecStart=/home/manu/personalcode/home_control_adv/start_backend.sh
 ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed
 TimeoutStopSec=15
@@ -20,7 +20,7 @@ RestartSec=10
 
 # Variables de entorno
 Environment=DJANGO_SETTINGS_MODULE=home_control.settings
-Environment=PYTHONPATH=/home/manu/code/home_control_adv/backend
+Environment=PYTHONPATH=/home/manu/personalcode/home_control_adv/backend
 Environment=PYTHONDONTWRITEBYTECODE=1
 
 # Logging
@@ -32,7 +32,7 @@ SyslogIdentifier=home-control-backend
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/manu/code/home_control_adv
+ReadWritePaths=/home/manu/personalcode/home_control_adv
 
 [Install]
 WantedBy=multi-user.target
