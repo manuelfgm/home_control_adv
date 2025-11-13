@@ -1,9 +1,9 @@
 #!/bin/bash
 # Script de gestión del servicio Home Control Backend
-# /home/manu/personalcode/home_control_adv/manage_service.sh
+# /home/manu/code/home_control_adv/manage_service.sh
 
 SERVICE_NAME="home-control-backend"
-SERVICE_FILE="/home/manu/personalcode/home_control_adv/${SERVICE_NAME}.service"
+SERVICE_FILE="/home/manu/code/home_control_adv/${SERVICE_NAME}.service"
 SYSTEM_SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 
 case "$1" in
