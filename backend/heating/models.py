@@ -491,11 +491,12 @@ class HeatingController:
             command_sent = mqtt_service.send_actuator_command(
                 actuator_id='boiler',
                 temperature=temperature,
-                target_temperature=decision['target_temperature'],
                 action=action
             )
             
-            logger.info(f"Sensor {sensor_id}: {temperature}°C -> {action} (target: {decision['target_temperature']}°C)")
+            logger.info(f"Sensor {sensor_id}: {temperature}°C")
+            logger.info(f"{action} (target: {decision['target_temperature']}°C)")
+            logger.info(f"Hysteresis applied: {decision['hysteresis_applied']}")
             
             return {
                 'decision': decision,
