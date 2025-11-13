@@ -142,6 +142,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -159,8 +160,8 @@ REST_FRAMEWORK = {
     ],
 }
 
-# MQTT Configuration (para compatibilidad con mqtt_bridge)
-MQTT_BROKER = os.getenv('MQTT_HOST', 'localhost')
+# MQTT Configuration (para control de actuadores)
+MQTT_HOST = os.getenv('MQTT_HOST', 'localhost')
 MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
 MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
 MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', '')

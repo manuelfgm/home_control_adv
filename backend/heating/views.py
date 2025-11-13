@@ -216,3 +216,32 @@ class HeatingControlViewSet(viewsets.ViewSet):
             'temperature': temperature,
             'duration_minutes': duration_minutes
         })
+    
+    @action(detail=False, methods=['post'])
+    def test_mqtt(self, request):
+        """Probar envío de comando MQTT"""
+        try:
+            from .models import MQTTService
+            
+            temperature = request.data.get('temperature', 20.0)
+            action = request.data.get('action', 'turn_on')  # turn_on o turn_off
+            actuator_id = request.data.get('actuator_id', 'boiler')
+            
+            mqtt_service = MQTTService()
+            result = mqtt_service.send_actuator_command(actuator_id, temperature, action)
+            
+            return Response({
+                'success': result,
+                'message': 'Comando MQTT enviado' if result else 'Error enviando comando MQTT',
+                'command': {
+                    'actuator_id': actuator_id,
+                    'temperature': temperature,
+                    'action': action
+                }
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Error enviando comando MQTT: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

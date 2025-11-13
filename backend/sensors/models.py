@@ -40,3 +40,27 @@ class SensorReading(models.Model):
     
     def __str__(self):
         return f"{self.sensor_id} - {self.temperature}°C - {self.created_at}"
+    
+    def save(self, *args, **kwargs):
+        """
+        Sobrescribir save para procesar automáticamente la lectura de temperatura
+        """
+        # Guardar primero la lectura
+        super().save(*args, **kwargs)
+        
+        # Si tenemos temperatura, procesar control de calefacción
+        if self.temperature is not None:
+            try:
+                # Importar aquí para evitar importaciones circulares
+                from heating.models import HeatingController
+                
+                # Procesar la lectura para control automático
+                result = HeatingController.process_sensor_reading(
+                    sensor_id=self.sensor_id,
+                    temperature=self.temperature
+                )
+                
+                print(f"🌡️ Sensor {self.sensor_id}: {self.temperature}°C -> Acción: {result.get('action', 'none')}")
+                
+            except Exception as e:
+                print(f"❌ Error procesando control automático: {e}")

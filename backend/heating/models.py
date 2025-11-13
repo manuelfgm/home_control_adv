@@ -254,3 +254,256 @@ class HeatingLog(models.Model):
         status = "Encendida" if self.is_heating else "Apagada"
         temp_info = f" ({self.current_temperature}°C → {self.target_temperature}°C)" if self.current_temperature else ""
         return f"{self.timestamp.strftime('%d/%m %H:%M')} - {status}{temp_info}"
+
+
+import json
+import paho.mqtt.client as mqtt
+import logging
+import threading
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+
+class MQTTService:
+    """
+    Servicio para enviar comandos MQTT desde Django
+    """
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance.initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if not self.initialized:
+            self.client = None
+            self.connected = False
+            self.mqtt_host = getattr(settings, 'MQTT_HOST', 'localhost')
+            self.mqtt_port = getattr(settings, 'MQTT_PORT', 1883)
+            self.mqtt_username = getattr(settings, 'MQTT_USERNAME', '')
+            self.mqtt_password = getattr(settings, 'MQTT_PASSWORD', '')
+            self.initialized = True
+    
+    def connect(self):
+        """Conectar al broker MQTT"""
+        try:
+            if self.client is None:
+                self.client = mqtt.Client()
+                self.client.on_connect = self._on_connect
+                self.client.on_disconnect = self._on_disconnect
+                
+                if self.mqtt_username and self.mqtt_password:
+                    self.client.username_pw_set(self.mqtt_username, self.mqtt_password)
+            
+            if not self.connected:
+                self.client.connect_async(self.mqtt_host, self.mqtt_port, 60)
+                self.client.loop_start()
+                
+        except Exception as e:
+            logger.error(f"Error conectando a MQTT: {e}")
+    
+    def _on_connect(self, client, userdata, flags, rc):
+        if rc == 0:
+            self.connected = True
+            logger.info("Conectado a MQTT broker")
+        else:
+            logger.error(f"Error conectando a MQTT: {rc}")
+    
+    def _on_disconnect(self, client, userdata, rc):
+        self.connected = False
+        logger.info("Desconectado de MQTT broker")
+    
+    def send_actuator_command(self, actuator_id, temperature, action):
+        """
+        Enviar comando al actuador via MQTT
+        
+        Args:
+            actuator_id (str): ID del actuador (ej: 'boiler')
+            temperature (float): Temperatura actual
+            action (str): 'turn_on' o 'turn_off'
+        """
+        try:
+            self.connect()
+            
+            topic = f"home/actuator/{actuator_id}/command"
+            
+            command = {
+                "temperature": temperature,
+                "action": action,
+                "timestamp": timezone.now().isoformat()
+            }
+            
+            message = json.dumps(command)
+            
+            if self.client and self.connected:
+                result = self.client.publish(topic, message)
+                if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                    logger.info(f"Comando enviado a {topic}: {message}")
+                    return True
+                else:
+                    logger.error(f"Error enviando comando MQTT: {result.rc}")
+            else:
+                logger.error("Cliente MQTT no conectado")
+                
+        except Exception as e:
+            logger.error(f"Error enviando comando MQTT: {e}")
+        
+        return False
+
+
+class HeatingController:
+    """
+    Controlador automático de calefacción
+    """
+    
+    @staticmethod
+    def calculate_heating_decision(current_temperature, sensor_id=None):
+        """
+        Calcula si debe encender/apagar la calefacción basado en temperatura actual
+        
+        Args:
+            current_temperature (float): Temperatura actual del sensor
+            sensor_id (str): ID del sensor (opcional, para logs)
+            
+        Returns:
+            dict: {
+                'should_heat': bool,
+                'target_temperature': float,
+                'current_temperature': float,
+                'reason': str,
+                'hysteresis_applied': bool
+            }
+        """
+        try:
+            # Obtener configuración actual
+            settings = HeatingSettings.get_current_settings()
+            if not settings or not settings.is_active:
+                return {
+                    'should_heat': False,
+                    'target_temperature': 0.0,
+                    'current_temperature': current_temperature,
+                    'reason': 'sistema_desactivado',
+                    'hysteresis_applied': False
+                }
+            
+            # Obtener temperatura objetivo (horarios o por defecto)
+            target_temperature = HeatingSchedule.get_current_target_temperature()
+            
+            # Obtener último estado de calefacción
+            last_log = HeatingLog.objects.first()  # Ya ordenado por -timestamp
+            last_heating_state = last_log.is_heating if last_log else False
+            
+            # Aplicar lógica de histéresis
+            hysteresis = settings.hysteresis
+            should_heat = False
+            hysteresis_applied = False
+            reason = "temperatura_objetivo"
+            
+            if last_heating_state:
+                # Si estaba encendida, apagar solo si temperatura > objetivo + histéresis
+                if current_temperature >= target_temperature + hysteresis:
+                    should_heat = False
+                    reason = "temperatura_alcanzada"
+                    hysteresis_applied = True
+                else:
+                    should_heat = True
+                    reason = "manteniendo_temperatura"
+            else:
+                # Si estaba apagada, encender solo si temperatura < objetivo - histéresis
+                if current_temperature <= target_temperature - hysteresis:
+                    should_heat = True
+                    reason = "temperatura_baja"
+                    hysteresis_applied = True
+                else:
+                    should_heat = False
+                    reason = "temperatura_adecuada"
+            
+            return {
+                'should_heat': should_heat,
+                'target_temperature': target_temperature,
+                'current_temperature': current_temperature,
+                'reason': reason,
+                'hysteresis_applied': hysteresis_applied,
+                'last_state': last_heating_state
+            }
+            
+        except Exception as e:
+            # En caso de error, por seguridad apagar calefacción
+            logger.error(f"Error calculando decisión de calefacción: {e}")
+            return {
+                'should_heat': False,
+                'target_temperature': 0.0,
+                'current_temperature': current_temperature,
+                'reason': f'error_{str(e)}',
+                'hysteresis_applied': False
+            }
+    
+    @staticmethod
+    def log_heating_decision(decision_data, actuator_id=None, source='automatic_control'):
+        """
+        Registra la decisión de calefacción en los logs
+        """
+        try:
+            HeatingLog.objects.create(
+                is_heating=decision_data['should_heat'],
+                current_temperature=decision_data['current_temperature'],
+                target_temperature=decision_data['target_temperature'],
+                action_reason=decision_data['reason'],
+                actuator_id=actuator_id,
+                source=source
+            )
+        except Exception as e:
+            logger.error(f"Error logging heating decision: {e}")
+    
+    @staticmethod
+    def process_sensor_reading(sensor_id, temperature):
+        """
+        Procesa una lectura de sensor y envía comando al actuador si es necesario
+        
+        Args:
+            sensor_id (str): ID del sensor
+            temperature (float): Temperatura leída
+            
+        Returns:
+            dict: Información sobre la decisión tomada
+        """
+        try:
+            # Calcular decisión
+            decision = HeatingController.calculate_heating_decision(temperature, sensor_id)
+            
+            # Registrar en logs
+            HeatingController.log_heating_decision(decision, 'boiler', 'sensor_reading')
+            
+            # Enviar comando MQTT al actuador
+            mqtt_service = MQTTService()
+            action = "turn_on" if decision['should_heat'] else "turn_off"
+            
+            command_sent = mqtt_service.send_actuator_command(
+                actuator_id='boiler',
+                temperature=temperature,
+                action=action
+            )
+            
+            logger.info(f"Sensor {sensor_id}: {temperature}°C -> {action} (target: {decision['target_temperature']}°C)")
+            
+            return {
+                'decision': decision,
+                'command_sent': command_sent,
+                'action': action,
+                'actuator_id': 'boiler'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error procesando lectura de sensor {sensor_id}: {e}")
+            return {
+                'decision': {'should_heat': False, 'reason': f'error_{str(e)}'},
+                'command_sent': False,
+                'action': 'turn_off',
+                'actuator_id': 'boiler'
+            }
