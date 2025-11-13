@@ -70,7 +70,7 @@ case "$1" in
         
     test)
         echo "🧪 Probando configuración..."
-        /home/manu/personalcode/home_control_adv/start_backend.sh --check-only || true
+        /home/manu/code/home_control_adv/start_backend.sh --check-only || true
         ;;
         
     *)
