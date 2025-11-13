@@ -2,7 +2,9 @@ from django.db import models
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
 import datetime
+import logging
 
+logger = logging.getLogger(__name__)
 
 class HeatingSettings(models.Model):
     """
@@ -140,9 +142,10 @@ class HeatingSchedule(models.Model):
         if not self.is_active:
             return False
             
-        now = timezone.now()
-        current_weekday = now.weekday()  # 0=Monday, 6=Sunday
-        current_time = now.time()
+        # Usar tiempo local usando timezone.localtime() nativo de Django
+        now_local = timezone.localtime()  # Convierte automáticamente a zona local configurada
+        current_weekday = now_local.weekday()  # 0=Monday, 6=Sunday
+        current_time = now_local.time()
         
         # Verificar si el día actual está en la lista de días del horario
         weekdays_list = self.get_weekdays_list()
@@ -258,11 +261,8 @@ class HeatingLog(models.Model):
 
 import json
 import paho.mqtt.client as mqtt
-import logging
 import threading
 from django.conf import settings
-
-logger = logging.getLogger(__name__)
 
 
 class MQTTService:
