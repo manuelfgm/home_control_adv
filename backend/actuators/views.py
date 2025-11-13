@@ -19,16 +19,14 @@ class ActuatorStatusViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """
         Crear nuevo estado de actuador.
-        Acepta JSON crudo desde mqtt_bridge y crea log de calefacción.
+        Acepta JSON crudo desde mqtt_bridge.
+        Los HeatingLog se crean solo desde sensor readings, no desde actuator updates.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Crear el estado del actuador
+        # Crear solo el estado del actuador
         actuator_status = serializer.save()
-        
-        # Crear log de calefacción automáticamente
-        self._create_heating_log(actuator_status)
         
         headers = self.get_success_headers(serializer.data)
         return Response(
@@ -37,31 +35,7 @@ class ActuatorStatusViewSet(viewsets.ModelViewSet):
             headers=headers
         )
     
-    def _create_heating_log(self, actuator_status):
-        """Crear log de calefacción basado en el estado del actuador"""
-        try:
-            # Importar aquí para evitar imports circulares
-            from heating.models import HeatingLog, HeatingSchedule
-            
-            # Obtener temperatura objetivo actual
-            target_temp = HeatingSchedule.get_current_target_temperature()
-            
-            # Crear log
-            HeatingLog.objects.create(
-                is_heating=actuator_status.is_heating,
-                current_temperature=actuator_status.temperature,
-                target_temperature=target_temp,
-                action_reason='actuator_update',
-                actuator_id=actuator_status.actuator_id,
-                wifi_signal=actuator_status.wifi_signal,
-                free_heap=actuator_status.free_heap,
-                source='mqtt_bridge'
-            )
-        except Exception as e:
-            # Log error pero no fallar la creación del actuator status
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error creando heating log: {e}")
+
     
     @action(detail=False, methods=['get'])
     def current(self, request):
