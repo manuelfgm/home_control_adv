@@ -304,6 +304,10 @@ class MQTTService:
             if not self.connected:
                 self.client.connect_async(self.mqtt_host, self.mqtt_port, 60)
                 self.client.loop_start()
+
+            # Añadir un retardo de 3 segundos
+            import time
+            time.sleep(3)
                 
         except Exception as e:
             logger.error(f"Error conectando a MQTT: {e}")
