@@ -97,7 +97,7 @@ class CurrentStatusSerializer(serializers.Serializer):
             'target_temperature': target_temp,
             'is_heating': latest_log.is_heating if latest_log else False,
             'active_schedule': HeatingScheduleSerializer(active_schedule).data if active_schedule else None,
-            'default_temperature': settings.default_temperature if settings else 18.0,
+            'default_temperature': settings.default_temperature if settings else 16.0,
             'system_active': settings.is_active if settings else False,
             'last_update': latest_log.timestamp if latest_log else None
         }

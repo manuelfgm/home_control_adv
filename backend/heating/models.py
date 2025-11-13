@@ -173,7 +173,7 @@ class HeatingSchedule(models.Model):
         
         # Si no hay horario activo, usar temperatura por defecto
         settings = HeatingSettings.get_current_settings()
-        return settings.default_temperature if settings else 18.0
+        return settings.default_temperature if settings else 16.0
     
     @classmethod
     def create_workdays_schedule(cls, name, start_time, end_time, temperature, settings=None):
@@ -491,6 +491,7 @@ class HeatingController:
             command_sent = mqtt_service.send_actuator_command(
                 actuator_id='boiler',
                 temperature=temperature,
+                target_temperature=decision['target_temperature'],
                 action=action
             )
             
