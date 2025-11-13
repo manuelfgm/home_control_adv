@@ -161,38 +161,36 @@ class MQTTDjangoBridge:
             logger.error(f"Error manejando datos de sensor: {e}")
 
     def handle_actuator_data(self, topic: str, payload: str):
-        """Maneja datos de actuadores: home/actuator/ACTUATOR_ID/data"""
+        """
+        Maneja datos de actuadores: home/actuator/ACTUATOR_ID/data
+        Ahora usa ActuatorReadings para evitar bucles infinitos de control
+        """
         try:
             # Convertir JSON a diccionario Python
             data = json.loads(payload)
             actuator_id = data.get('actuator_id', topic.split('/')[2])
             
-            logger.info(f"Procesando datos del actuador {actuator_id}")
+            logger.info(f"Procesando lectura del actuador {actuator_id} (sin disparar control automático)")
             
-            # Preparar diccionario con todos los campos del actuador
-            actuator_dict = {
+            # Preparar diccionario para ActuatorReadings (NO dispara control automático)
+            reading_dict = {
                 'actuator_id': data.get('actuator_id', actuator_id),
                 'is_heating': data.get('is_heating', False),
                 'timestamp': data.get('timestamp'),
                 'wifi_signal': data.get('wifi_signal'),
                 'free_heap': data.get('free_heap'),
                 'temperature': data.get('temperature'),
-                'source': 'mqtt_bridge'
+                'source': 'mqtt_bridge',
+                'reading_type': 'periodic_reading'  # Marca como lectura periódica, no comando
             }
             
-            # Enviar diccionario a Django
-            self.send_to_django('actuator/api/status', actuator_dict)
+            # Enviar a ActuatorReadings (NO dispara control automático)
+            success = self.send_to_django('actuators/api/readings', reading_dict)
             
-            # Opcional: También enviar como dato de sensor si tenemos temperatura
-            # (esto mantiene compatibilidad con el sistema existente)
-            if data.get('temperature') is not None:
-                sensor_data = {
-                    'sensor_id': f'actuator_{actuator_id}',
-                    'temperature': data.get('temperature'),
-                    'timestamp': data.get('timestamp', datetime.now().isoformat()),
-                    'source': 'mqtt_bridge_actuator'
-                }
-                self.send_to_django('sensors/api/readings', sensor_data)
+            if success:
+                logger.info(f"✅ Lectura de actuador {actuator_id} registrada (sin bucle)")
+            else:
+                logger.error(f"❌ Error registrando lectura de actuador {actuator_id}")
             
         except json.JSONDecodeError:
             logger.error(f"Payload JSON inválido para actuador: {payload}")
