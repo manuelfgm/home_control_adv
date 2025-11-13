@@ -24,3 +24,5 @@ urlpatterns = [
     path('actuator/', include(('actuators.urls', 'actuator'), namespace='actuator')),  # Alias con namespace diferente
     path('heating/', include('heating.urls')),
 ]
+
+# WhiteNoise maneja automáticamente los archivos estáticos, no necesitamos configuración adicional

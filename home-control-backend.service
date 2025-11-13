@@ -32,7 +32,7 @@ SyslogIdentifier=home-control-backend
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/manu/personalcode/home_control_adv
+ReadWritePaths=/home/manu/code/home_control_adv
 
 [Install]
 WantedBy=multi-user.target
