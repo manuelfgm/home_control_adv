@@ -39,10 +39,26 @@ class HeatingSettings(models.Model):
     def __str__(self):
         return f"{self.name} - {self.default_temperature}°C"
     
+    def save(self, *args, **kwargs):
+        """Asegurar que solo una configuración esté activa a la vez"""
+        if self.is_active:
+            # Desactivar todas las otras configuraciones
+            HeatingSettings.objects.filter(is_active=True).exclude(id=self.id).update(is_active=False)
+        super().save(*args, **kwargs)
+    
     @classmethod
     def get_current_settings(cls):
         """Obtiene la configuración activa actual"""
         return cls.objects.filter(is_active=True).first() or cls.objects.first()
+    
+    @classmethod
+    def set_active_configuration(cls, config_id):
+        """Establece una configuración específica como activa"""
+        # Desactivar todas
+        cls.objects.update(is_active=False)
+        # Activar la seleccionada
+        cls.objects.filter(id=config_id).update(is_active=True)
+        return cls.objects.get(id=config_id)
 
 
 class HeatingSchedule(models.Model):
@@ -80,16 +96,6 @@ class HeatingSchedule(models.Model):
     
     # Estado
     is_active = models.BooleanField(default=True, help_text="¿Está activo este horario?")
-    
-    # Relación con configuración
-    settings = models.ForeignKey(
-        HeatingSettings, 
-        on_delete=models.CASCADE, 
-        related_name='schedules',
-        null=True, 
-        blank=True,
-        help_text="Configuración asociada"
-    )
     
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -179,43 +185,133 @@ class HeatingSchedule(models.Model):
         return settings.default_temperature if settings else 16.0
     
     @classmethod
-    def create_workdays_schedule(cls, name, start_time, end_time, temperature, settings=None):
+    def create_workdays_schedule(cls, name, start_time, end_time, temperature):
         """Crear horario para días laborables (L-V)"""
         schedule = cls.objects.create(
             name=name,
             weekdays="0,1,2,3,4",  # Lunes a Viernes
             start_time=start_time,
             end_time=end_time,
-            target_temperature=temperature,
-            settings=settings
+            target_temperature=temperature
         )
         return schedule
     
     @classmethod
-    def create_weekend_schedule(cls, name, start_time, end_time, temperature, settings=None):
+    def create_weekend_schedule(cls, name, start_time, end_time, temperature):
         """Crear horario para fines de semana (S-D)"""
         schedule = cls.objects.create(
             name=name,
             weekdays="5,6",  # Sábado y Domingo
             start_time=start_time,
             end_time=end_time,
-            target_temperature=temperature,
-            settings=settings
+            target_temperature=temperature
         )
         return schedule
     
     @classmethod
-    def create_daily_schedule(cls, name, start_time, end_time, temperature, settings=None):
+    def create_daily_schedule(cls, name, start_time, end_time, temperature):
         """Crear horario para todos los días"""
         schedule = cls.objects.create(
             name=name,
             weekdays="0,1,2,3,4,5,6",  # Todos los días
             start_time=start_time,
             end_time=end_time,
-            target_temperature=temperature,
-            settings=settings
+            target_temperature=temperature
         )
         return schedule
+
+    def check_overlap_with_active_schedules(self):
+        """
+        Verifica si este horario se solapa con otros horarios activos.
+        Retorna el primer horario conflictivo encontrado o None si no hay conflictos.
+        """
+        # Obtener todos los horarios activos excepto este mismo
+        active_schedules = HeatingSchedule.objects.filter(is_active=True).exclude(id=self.id)
+        
+        # Obtener los días de este horario
+        my_weekdays = set(self.get_weekdays_list())
+        
+        for other_schedule in active_schedules:
+            # Obtener los días del otro horario
+            other_weekdays = set(other_schedule.get_weekdays_list())
+            
+            # Si no comparten días, no hay conflicto
+            if not my_weekdays.intersection(other_weekdays):
+                continue
+                
+            # Si comparten días, verificar solapamiento de horas
+            if self.times_overlap(other_schedule):
+                return other_schedule
+                
+        return None
+    
+    def times_overlap(self, other_schedule):
+        """
+        Verifica si los horarios de tiempo se solapan entre dos horarios.
+        Maneja correctamente horarios que cruzan medianoche.
+        """
+        my_start = self.start_time
+        my_end = self.end_time
+        other_start = other_schedule.start_time
+        other_end = other_schedule.end_time
+        
+        # Caso 1: Ninguno cruza medianoche
+        if my_start <= my_end and other_start <= other_end:
+            return not (my_end <= other_start or other_end <= my_start)
+        
+        # Caso 2: Solo mi horario cruza medianoche
+        elif my_start > my_end and other_start <= other_end:
+            # Mi horario es [start, 23:59] + [00:00, end]
+            # Se solapa si other está en cualquiera de esos rangos
+            return not (other_end <= my_end or other_start >= my_start)
+        
+        # Caso 3: Solo el otro horario cruza medianoche
+        elif my_start <= my_end and other_start > other_end:
+            # El otro horario es [start, 23:59] + [00:00, end]
+            # Se solapa si yo estoy en cualquiera de esos rangos
+            return not (my_end <= other_end or my_start >= other_start)
+        
+        # Caso 4: Ambos cruzan medianoche
+        else:
+            # Si ambos cruzan medianoche, siempre se solapan
+            return True
+
+    def save(self, *args, **kwargs):
+        """Override save para validar solapamientos al activar un horario"""
+        if self.is_active:
+            conflicting_schedule = self.check_overlap_with_active_schedules()
+            if conflicting_schedule:
+                from django.core.exceptions import ValidationError
+                
+                # Formatear días para mostrar en el mensaje
+                my_days = self.get_weekdays_display()
+                other_days = conflicting_schedule.get_weekdays_display()
+                
+                # Formatear horarios
+                my_time = f"{self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"
+                other_time = f"{conflicting_schedule.start_time.strftime('%H:%M')} - {conflicting_schedule.end_time.strftime('%H:%M')}"
+                
+                raise ValidationError(
+                    f'No se puede activar el horario "{self.name}" ({my_days}, {my_time}) '
+                    f'porque se solapa con el horario "{conflicting_schedule.name}" '
+                    f'({other_days}, {other_time}) que ya está activo.'
+                )
+        
+        super().save(*args, **kwargs)
+
+    def get_weekdays_display(self):
+        """Retorna una representación legible de los días de la semana"""
+        weekdays_names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+        weekdays_list = self.get_weekdays_list()
+        
+        if len(weekdays_list) == 7:
+            return "Todos los días"
+        elif set(weekdays_list) == {0, 1, 2, 3, 4}:
+            return "Lunes a Viernes"
+        elif set(weekdays_list) == {5, 6}:
+            return "Fines de semana"
+        else:
+            return ", ".join([weekdays_names[day] for day in sorted(weekdays_list)])
 
 
 class HeatingLog(models.Model):

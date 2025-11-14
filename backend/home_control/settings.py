@@ -145,6 +145,11 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Directorios adicionales para archivos estáticos
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
 # WhiteNoise configuration
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
@@ -160,7 +165,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',  # Para pruebas, cambiar en producción
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -223,3 +232,20 @@ LOGGING = {
 
 # Crear directorio de logs si no existe
 (BASE_DIR.parent / 'logs').mkdir(exist_ok=True)
+
+# Configuración de autenticación
+LOGIN_URL = '/admin/login/'
+LOGIN_REDIRECT_URL = '/heating/dashboard/'
+LOGOUT_REDIRECT_URL = '/admin/login/'
+
+# Configuraciones de seguridad más permisivas para desarrollo
+if DEBUG:
+    # Permitir inline scripts y eval para desarrollo
+    SECURE_CONTENT_TYPE_NOSNIFF = False
+    SECURE_BROWSER_XSS_FILTER = False
+    # CSP más permisivo
+    CSP_DEFAULT_SRC = ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
+    CSP_SCRIPT_SRC = ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
+    CSP_STYLE_SRC = ["'self'", "'unsafe-inline'"]
+    # Headers de seguridad menos estrictos
+    SECURE_REFERRER_POLICY = None

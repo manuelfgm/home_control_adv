@@ -1,8 +1,10 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db import models
+from django.core.exceptions import ValidationError
 from .models import HeatingSettings, HeatingSchedule, HeatingLog
 from .serializers import (
     HeatingSettingsSerializer, HeatingScheduleSerializer, 
@@ -16,6 +18,7 @@ class HeatingSettingsViewSet(viewsets.ModelViewSet):
     """
     queryset = HeatingSettings.objects.all()
     serializer_class = HeatingSettingsSerializer
+    permission_classes = [IsAuthenticated]
     
     @action(detail=False, methods=['get'])
     def current(self, request):
@@ -57,14 +60,43 @@ class HeatingScheduleViewSet(viewsets.ModelViewSet):
     """
     queryset = HeatingSchedule.objects.all()
     serializer_class = HeatingScheduleSerializer
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Filtrar por configuración si se especifica"""
-        queryset = super().get_queryset()
-        settings_id = self.request.query_params.get('settings_id')
-        if settings_id:
-            queryset = queryset.filter(settings_id=settings_id)
-        return queryset
+        """Obtener todos los horarios ordenados por hora de inicio"""
+        return super().get_queryset().order_by('start_time')
+    
+    def create(self, request, *args, **kwargs):
+        """Create con manejo de errores de solapamiento"""
+        try:
+            return super().create(request, *args, **kwargs)
+        except Exception as e:
+            from django.core.exceptions import ValidationError
+            if isinstance(e.__cause__, ValidationError) or isinstance(e, ValidationError):
+                error_message = str(e.__cause__) if hasattr(e, '__cause__') and e.__cause__ else str(e)
+                # Limpiar el mensaje de error de formato Django
+                clean_message = error_message.replace("['", "").replace("']", "").replace("\"", "")
+                return Response(
+                    {'error': clean_message}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            raise e
+    
+    def update(self, request, *args, **kwargs):
+        """Update con manejo de errores de solapamiento"""
+        try:
+            return super().update(request, *args, **kwargs)
+        except Exception as e:
+            from django.core.exceptions import ValidationError
+            if isinstance(e.__cause__, ValidationError) or isinstance(e, ValidationError):
+                error_message = str(e.__cause__) if hasattr(e, '__cause__') and e.__cause__ else str(e)
+                # Limpiar el mensaje de error de formato Django
+                clean_message = error_message.replace("['", "").replace("']", "").replace("\"", "")
+                return Response(
+                    {'error': clean_message}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            raise e
     
     @action(detail=False, methods=['get'])
     def current_active(self, request):
@@ -111,6 +143,8 @@ class HeatingLogViewSet(viewsets.ModelViewSet):
     """
     queryset = HeatingLog.objects.all()
     serializer_class = HeatingLogSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get']  # Solo lectura
     
     def get_queryset(self):
         """Filtrar logs por fecha si se especifica"""
@@ -170,8 +204,17 @@ class HeatingLogViewSet(viewsets.ModelViewSet):
 
 class HeatingControlViewSet(viewsets.ViewSet):
     """
-    ViewSet para control general del sistema de calefacción
+    ViewSet para control manual del sistema de calefacción
     """
+    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        """
+        El endpoint status debe ser público para que el dashboard funcione
+        """
+        if self.action == 'status':
+            return []
+        return super().get_permissions()
     
     @action(detail=False, methods=['get'])
     def status(self, request):

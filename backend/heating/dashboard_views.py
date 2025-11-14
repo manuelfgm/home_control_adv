@@ -1,0 +1,342 @@
+from django.shortcuts import render, get_object_or_404
+from django.http import JsonResponse, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from django.utils import timezone
+import json
+from datetime import time
+
+from .models import HeatingSettings, HeatingSchedule, HeatingLog, HeatingController
+from .serializers import CurrentStatusSerializer, HeatingSettingsSerializer, HeatingScheduleSerializer
+
+@login_required
+def test_dashboard_data(request):
+    """Vista de prueba para verificar que los datos están disponibles"""
+    
+    # Obtener datos directamente
+    settings = HeatingSettings.objects.all()
+    schedules = HeatingSchedule.objects.all()
+    
+    context = {
+        'user': request.user,
+        'settings_count': settings.count(),
+        'schedules_count': schedules.count(),
+        'settings_list': [(s.id, s.name, s.is_active) for s in settings],
+        'schedules_list': [(s.id, s.name, s.is_active, s.start_time, s.end_time) for s in schedules],
+    }
+    
+    if request.GET.get('format') == 'json':
+        from django.http import JsonResponse
+        return JsonResponse(context, safe=False)
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test Dashboard Data</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+            .success {{ color: green; }}
+            .error {{ color: red; }}
+            .data {{ background: #f5f5f5; padding: 10px; margin: 10px 0; }}
+        </style>
+    </head>
+    <body>
+        <h1>Dashboard Data Test</h1>
+        
+        <div class="success">✅ Usuario autenticado: {request.user.username}</div>
+        
+        <h2>Configuraciones ({settings.count()})</h2>
+        <div class="data">
+        {'<br>'.join([f"ID: {s[0]}, Nombre: {s[1]}, Activa: {s[2]}" for s in context['settings_list']])}
+        </div>
+        
+        <h2>Horarios ({schedules.count()})</h2>
+        <div class="data">
+        {'<br>'.join([f"ID: {s[0]}, Nombre: {s[1]}, Activo: {s[2]}, Horario: {s[3]}-{s[4]}" for s in context['schedules_list']])}
+        </div>
+        
+        <h2>Test de APIs con JavaScript</h2>
+        <div id="api-test">
+            <button onclick="testAPIs()">Probar APIs</button>
+            <div id="results"></div>
+        </div>
+        
+        <script>
+        async function testAPIs() {{
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>Probando APIs...</p>';
+            
+            let results = [];
+            
+            // Test API Settings
+            try {{
+                const settingsResp = await fetch('/heating/api/settings/', {{
+                    credentials: 'same-origin'
+                }});
+                results.push(`Settings API: ${{settingsResp.status}} - ${{settingsResp.ok ? 'OK' : 'ERROR'}}`);
+                if (settingsResp.ok) {{
+                    const data = await settingsResp.json();
+                    results.push(`  → ${{data.length}} configuraciones encontradas`);
+                }}
+            }} catch (e) {{
+                results.push(`Settings API: ERROR - ${{e.message}}`);
+            }}
+            
+            // Test API Schedules  
+            try {{
+                const schedulesResp = await fetch('/heating/api/schedules/', {{
+                    credentials: 'same-origin'
+                }});
+                results.push(`Schedules API: ${{schedulesResp.status}} - ${{schedulesResp.ok ? 'OK' : 'ERROR'}}`);
+                if (schedulesResp.ok) {{
+                    const data = await schedulesResp.json();
+                    results.push(`  → ${{data.length}} horarios encontrados`);
+                }}
+            }} catch (e) {{
+                results.push(`Schedules API: ERROR - ${{e.message}}`);
+            }}
+            
+            // Test API Status
+            try {{
+                const statusResp = await fetch('/heating/api/status/', {{
+                    credentials: 'same-origin'
+                }});
+                results.push(`Status API: ${{statusResp.status}} - ${{statusResp.ok ? 'OK' : 'ERROR'}}`);
+                if (statusResp.ok) {{
+                    const data = await statusResp.json();
+                    results.push(`  → Temp objetivo: ${{data.target_temperature}}°C`);
+                }}
+            }} catch (e) {{
+                results.push(`Status API: ERROR - ${{e.message}}`);
+            }}
+            
+            resultsDiv.innerHTML = '<pre>' + results.join('\\n') + '</pre>';
+        }}
+        </script>
+    </body>
+    </html>
+    """
+    
+    return HttpResponse(html)
+
+
+@login_required
+def dashboard_view(request):
+    """Servir el dashboard HTML estático - requiere login"""
+    # Crear el contenido HTML con el username del usuario
+    username = request.user.username
+    html_content = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="CSRF_TOKEN_PLACEHOLDER">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Dashboard Calefacción</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: #6c757d; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h3 { margin-top: 0; color: #6c757d; }
+        .status { text-align: center; }
+        .temperature { font-size: 2em; margin: 10px 0; }
+        .heating-on { color: #e74c3c; }
+        .heating-off { color: #95a5a6; }
+        .btn { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin: 5px; }
+        .btn-primary { background: #6c757d; color: white; }
+        .btn-success { background: #495057; color: white; }
+        .btn-danger { background: #868e96; color: white; }
+        .btn-warning { background: #adb5bd; color: white; }
+        .btn:hover { opacity: 0.8; }
+        .form-group { margin: 10px 0; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .schedule-item { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 4px; }
+        .schedule-active { border-color: #27ae60; background: #f8fff8; }
+        .schedule-current { border-color: #e74c3c; background: #fff8f8; }
+        .log-item { padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+        .modal-content { background: white; margin: 10% auto; padding: 20px; width: 80%; max-width: 500px; border-radius: 8px; }
+        .close { float: right; font-size: 28px; cursor: pointer; }
+        .weekday-selector { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+        .weekday-btn { padding: 10px; border: 1px solid #ddd; background: #f8f9fa; cursor: pointer; text-align: center; border-radius: 4px; }
+        .weekday-btn.selected { background: #007bff; color: white; }
+        .alert { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>🏠 Dashboard Calefacción</h1>
+                    <p>Control y monitoreo del sistema de calefacción</p>
+                </div>
+                <div style="text-align: right;">
+                    <p>👤 Usuario: <strong>USERNAME_PLACEHOLDER</strong></p>
+                    <a href="/admin/logout/" class="btn btn-danger" title="Cerrar Sesión">🚪</a>
+                </div>
+            </div>
+        </header>
+
+        <div id="alerts"></div>
+
+        <div class="cards">
+            <!-- Estado Actual -->
+            <div class="card status">
+                <h3>Estado Actual</h3>
+                <div class="temperature" id="current-temp">--°C</div>
+                <div id="heating-status">Sistema apagado</div>
+                <div>Objetivo: <span id="target-temp">--°C</span></div>
+                <div>Horario: <span id="current-schedule">--</span></div>
+            </div>
+        </div>
+
+        <!-- Horarios de Calefacción (primero para móvil) -->
+        <div class="card">
+            <h3>Horarios de Calefacción</h3>
+            <div style="margin-bottom: 15px;">
+                <button class="btn btn-success" onclick="dashboard.createNewSchedule()">➝ Nuevo Horario</button>
+            </div>
+            <div id="schedules-list"></div>
+        </div>
+
+        <!-- Configuraciones del Sistema -->
+        <div class="card">
+            <h3>Configuraciones del Sistema</h3>
+            <div style="margin-bottom: 15px;">
+                <button class="btn btn-success" onclick="dashboard.createNewSettings()">➞ Nueva Configuración</button>
+            </div>
+            <div id="settings-list">
+                <p>Cargando configuraciones...</p>
+            </div>
+        </div>
+
+        <!-- Últimos Logs -->
+        <div class="card">
+            <h3>Actividad Reciente</h3>
+            <div id="recent-logs" style="max-height: 300px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <!-- Modal para crear/editar horarios -->
+    <div id="schedule-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeScheduleModal()">&times;</span>
+            <h3 id="schedule-modal-title">Nuevo Horario</h3>
+            <div id="schedule-error-area" style="display: none; background: #ffebee; border: 1px solid #f44336; color: #c62828; padding: 10px; margin: 10px 0; border-radius: 4px;">
+                <strong>⚠️ Error:</strong> <span id="schedule-error-message"></span>
+            </div>
+            <form id="schedule-form">
+                <div class="form-group">
+                    <label>Nombre:</label>
+                    <input type="text" id="schedule-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Hora inicio:</label>
+                    <input type="time" id="start-time" required>
+                </div>
+                <div class="form-group">
+                    <label>Hora fin:</label>
+                    <input type="time" id="end-time" required>
+                </div>
+                <div class="form-group">
+                    <label>Temperatura objetivo (°C):</label>
+                    <input type="number" id="target-temperature" min="10" max="30" step="0.5" required>
+                </div>
+                <div class="form-group">
+                    <label>Días de la semana:</label>
+                    <div class="weekday-selector" id="weekday-selector">
+                        <div class="weekday-btn" data-day="0">L</div>
+                        <div class="weekday-btn" data-day="1">M</div>
+                        <div class="weekday-btn" data-day="2">X</div>
+                        <div class="weekday-btn" data-day="3">J</div>
+                        <div class="weekday-btn" data-day="4">V</div>
+                        <div class="weekday-btn" data-day="5">S</div>
+                        <div class="weekday-btn" data-day="6">D</div>
+                    </div>
+                </div>
+                <div style="text-align: center; margin-top: 20px;">
+                    <button type="button" class="btn btn-success" onclick="saveSchedule()">Guardar</button>
+                    <button type="button" class="btn" onclick="closeScheduleModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para crear/editar configuraciones -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSettingsModal()">&times;</span>
+            <h3 id="settings-modal-title">Nueva Configuración</h3>
+            <div id="settings-error-area" style="display: none; background: #ffebee; border: 1px solid #f44336; color: #c62828; padding: 10px; margin: 10px 0; border-radius: 4px;">
+                <strong>⚠️ Error:</strong> <span id="settings-error-message"></span>
+            </div>
+            <form id="settings-form">
+                <div class="form-group">
+                    <label>Nombre de la configuración:</label>
+                    <input type="text" id="settings-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Temperatura por defecto (°C):</label>
+                    <input type="number" id="settings-default-temp" min="15" max="25" step="0.5" required>
+                </div>
+                <div class="form-group">
+                    <label>Histéresis (°C):</label>
+                    <input type="number" id="settings-hysteresis" min="0.1" max="1" step="0.1" required>
+                </div>
+
+                <div style="text-align: center; margin-top: 20px;">
+                    <button type="button" class="btn btn-success" onclick="saveSettings()">Guardar</button>
+                    <button type="button" class="btn" onclick="closeSettingsModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js?v=2024-11-14"></script>
+</body>
+</html>
+    """
+    # Obtener token CSRF
+    from django.middleware.csrf import get_token
+    csrf_token = get_token(request)
+    
+    # Reemplazar placeholders
+    html_content = html_content.replace('USERNAME_PLACEHOLDER', username)
+    html_content = html_content.replace('CSRF_TOKEN_PLACEHOLDER', csrf_token)
+    
+    return HttpResponse(html_content)
+
+
+
+
+
+
+
+
+def status_api(request):
+    """API para obtener estado actual (para actualización en tiempo real)"""
+    try:
+        serializer = CurrentStatusSerializer(None)
+        data = serializer.to_representation(None)
+        
+        # Agregar información adicional
+        data['system_time'] = timezone.localtime().strftime('%Y-%m-%d %H:%M:%S')
+        
+        return JsonResponse(data)
+    except Exception as e:
+        # Debug: devolver el error para ver qué está pasando
+        return JsonResponse({
+            'error': str(e),
+            'debug': 'Error en status_api'
+        })

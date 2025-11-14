@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from .models import ActuatorStatus
 from .serializers import ActuatorStatusSerializer
 
@@ -15,6 +16,7 @@ class ActuatorStatusViewSet(viewsets.ModelViewSet):
     """
     queryset = ActuatorStatus.objects.all()
     serializer_class = ActuatorStatusSerializer
+    permission_classes = [AllowAny]  # Permite acceso desde mqtt_bridge
     
     def create(self, request, *args, **kwargs):
         """

@@ -31,7 +31,7 @@ class HeatingScheduleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'weekdays', 'weekdays_display', 'weekdays_list',
             'start_time', 'end_time', 'target_temperature', 'is_active', 
-            'is_active_now', 'settings', 'created_at', 'updated_at'
+            'is_active_now', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'weekdays_display', 'is_active_now', 'created_at', 'updated_at']
     
@@ -90,7 +90,7 @@ class CurrentStatusSerializer(serializers.Serializer):
         target_temp = HeatingSchedule.get_current_target_temperature()
         
         # Obtener último log para temperatura actual
-        latest_log = HeatingLog.objects.first()
+        latest_log = HeatingLog.objects.order_by('-timestamp').first()
         
         return {
             'current_temperature': latest_log.current_temperature if latest_log else None,

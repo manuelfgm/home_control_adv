@@ -26,14 +26,14 @@ class HeatingSettingsAdmin(admin.ModelAdmin):
 @admin.register(HeatingSchedule)
 class HeatingScheduleAdmin(admin.ModelAdmin):
     list_display = ['name', 'get_weekdays_display', 'start_time', 'end_time', 'target_temperature', 'is_active']
-    list_filter = ['is_active', 'settings']
+    list_filter = ['is_active']
     search_fields = ['name', 'weekdays']
     readonly_fields = ['created_at', 'updated_at', 'weekdays_display_admin']
     ordering = ['start_time']
     
     fieldsets = (
         ('Información General', {
-            'fields': ('name', 'settings', 'is_active')
+            'fields': ('name', 'is_active')
         }),
         ('Días de la Semana', {
             'fields': ('weekdays', 'weekdays_display_admin'),
