@@ -2,6 +2,7 @@ from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
+from django.middleware.csrf import get_token
 from django.utils import timezone
 import json
 from datetime import time
@@ -183,7 +184,10 @@ def dashboard_view(request):
                 </div>
                 <div style="text-align: right;">
                     <p>👤 Usuario: <strong>USERNAME_PLACEHOLDER</strong></p>
-                    <a href="/admin/logout/" class="btn btn-danger" title="Cerrar Sesión">🚪</a>
+                    <form method="post" action="/admin/logout/" style="display: inline;">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="CSRF_TOKEN_PLACEHOLDER">
+                        <button type="submit" class="btn btn-success" title="Cerrar Sesión" style="font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif; font-variant-emoji: text; border: none;">📴</button>
+                    </form>
                 </div>
             </div>
         </header>
@@ -264,6 +268,12 @@ def dashboard_view(request):
                         <div class="weekday-btn" data-day="5">S</div>
                         <div class="weekday-btn" data-day="6">D</div>
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="schedule-is-active" checked> Activar horario
+                    </label>
+                    <small style="display: block; color: #666; margin-top: 5px;">Solo se validarán solapamientos si el horario está activo</small>
                 </div>
                 <div style="text-align: center; margin-top: 20px;">
                     <button type="button" class="btn btn-success" onclick="saveSchedule()">Guardar</button>

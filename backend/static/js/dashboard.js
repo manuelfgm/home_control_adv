@@ -152,13 +152,12 @@ class HeatingDashboard {
                             ${settings.is_active ? '<br><small style="color: #27ae60;">✅ CONFIGURACIÓN ACTIVA</small>' : ''}
                         </div>
                         <div>
-                            <button class="btn btn-warning" onclick="dashboard.editSettings(${settings.id})">✏️</button>
-                            <button class="btn ${settings.is_active ? 'btn-warning' : 'btn-success'}" 
-                                    onclick="dashboard.toggleSettings(${settings.id})"
-                                    title="${settings.is_active ? 'Configuración activa' : 'Activar configuración'}">
-                                ${settings.is_active ? '🟢' : '⚪'}
+                                                        <button class="btn btn-success" onclick="dashboard.editSettings(${settings.id})">✏️</button>
+                            <button class="btn btn-success" 
+                                    onclick="dashboard.toggleSettings(${settings.id}, ${!settings.is_active})">
+                                ${settings.is_active ? '⏸️' : '▶️'}
                             </button>
-                            <button class="btn btn-danger" onclick="dashboard.deleteSettings(${settings.id})">🗑️</button>
+                            <button class="btn btn-success" onclick="dashboard.deleteSettings(${settings.id})">🗑️</button>
                         </div>
                     </div>
                 </div>
@@ -332,12 +331,12 @@ class HeatingDashboard {
                             ${schedule.is_active_now ? '<br><small style="color: #e74c3c;">🔥 ACTIVO AHORA</small>' : ''}
                         </div>
                         <div>
-                            <button class="btn btn-warning" onclick="dashboard.editSchedule(${schedule.id})">✏️</button>
-                            <button class="btn ${schedule.is_active ? 'btn-danger' : 'btn-success'}" 
-                                    onclick="dashboard.toggleSchedule(${schedule.id})">
+                            <button class="btn btn-success" onclick="dashboard.editSchedule(${schedule.id})">✏️</button>
+                            <button class="btn btn-success" 
+                                    onclick="dashboard.toggleSchedule(${schedule.id}, ${!schedule.is_active})">
                                 ${schedule.is_active ? '⏸️' : '▶️'}
                             </button>
-                            <button class="btn btn-danger" onclick="dashboard.deleteSchedule(${schedule.id})">🗑️</button>
+                            <button class="btn btn-success" onclick="dashboard.deleteSchedule(${schedule.id})">🗑️</button>
                         </div>
                     </div>
                 </div>
@@ -359,13 +358,16 @@ class HeatingDashboard {
             const selectedDays = Array.from(document.querySelectorAll('.weekday-btn.selected'))
                 .map(btn => parseInt(btn.dataset.day));
             
+            // Obtener estado de activación
+            const isActive = document.getElementById('schedule-is-active').checked;
+            
             const payload = {
                 name: name,
                 start_time: startTime,
                 end_time: endTime,
                 target_temperature: targetTemp,
                 weekdays_list: selectedDays,
-                is_active: true
+                is_active: isActive
             };
             
             console.log('Saving schedule:', payload);
@@ -496,6 +498,9 @@ class HeatingDashboard {
                 console.log('No hay días configurados o formato incorrecto:', schedule.weekdays_list); // Debug
             }
             
+            // Configurar el checkbox de activación
+            document.getElementById('schedule-is-active').checked = schedule.is_active;
+            
             this.showScheduleModal();
         }).catch(error => {
             console.error('Error cargando horario para editar:', error);
@@ -568,6 +573,8 @@ class HeatingDashboard {
         document.querySelectorAll('.weekday-btn').forEach(btn => {
             btn.classList.remove('selected');
         });
+        // Configurar checkbox de activación por defecto
+        document.getElementById('schedule-is-active').checked = true;
         document.getElementById('schedule-modal').style.display = 'block';
     }
     
@@ -577,6 +584,11 @@ class HeatingDashboard {
         document.querySelectorAll('.weekday-btn').forEach(btn => {
             btn.classList.remove('selected');
         });
+        // Limpiar también el área de errores
+        const errorArea = document.getElementById('schedule-error-area');
+        if (errorArea) {
+            errorArea.style.display = 'none';
+        }
         this.currentScheduleId = null;
     }
     

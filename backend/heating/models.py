@@ -276,27 +276,32 @@ class HeatingSchedule(models.Model):
             # Si ambos cruzan medianoche, siempre se solapan
             return True
 
+    def validate_active_overlap(self):
+        """Validar solapamientos solo si el horario está activo"""
+        if not self.is_active:
+            return  # No validar si el horario no está activo
+            
+        conflicting_schedule = self.check_overlap_with_active_schedules()
+        if conflicting_schedule:
+            from django.core.exceptions import ValidationError
+            
+            # Formatear días para mostrar en el mensaje
+            my_days = self.get_weekdays_display()
+            other_days = conflicting_schedule.get_weekdays_display()
+            
+            # Formatear horarios
+            my_time = f"{self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"
+            other_time = f"{conflicting_schedule.start_time.strftime('%H:%M')} - {conflicting_schedule.end_time.strftime('%H:%M')}"
+            
+            raise ValidationError(
+                f'No se puede activar el horario "{self.name}" ({my_days}, {my_time}) '
+                f'porque se solapa con el horario "{conflicting_schedule.name}" '
+                f'({other_days}, {other_time}) que ya está activo.'
+            )
+
     def save(self, *args, **kwargs):
-        """Override save para validar solapamientos al activar un horario"""
-        if self.is_active:
-            conflicting_schedule = self.check_overlap_with_active_schedules()
-            if conflicting_schedule:
-                from django.core.exceptions import ValidationError
-                
-                # Formatear días para mostrar en el mensaje
-                my_days = self.get_weekdays_display()
-                other_days = conflicting_schedule.get_weekdays_display()
-                
-                # Formatear horarios
-                my_time = f"{self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')}"
-                other_time = f"{conflicting_schedule.start_time.strftime('%H:%M')} - {conflicting_schedule.end_time.strftime('%H:%M')}"
-                
-                raise ValidationError(
-                    f'No se puede activar el horario "{self.name}" ({my_days}, {my_time}) '
-                    f'porque se solapa con el horario "{conflicting_schedule.name}" '
-                    f'({other_days}, {other_time}) que ya está activo.'
-                )
-        
+        """Override save para validar solapamientos solo cuando el horario está activo"""
+        self.validate_active_overlap()
         super().save(*args, **kwargs)
 
     def get_weekdays_display(self):
