@@ -324,7 +324,9 @@ def charts_dashboard_view(request):
                                 backgroundColor: 'rgba(231, 76, 60, 0.1)',
                                 tension: 0.4,
                                 yAxisID: 'y',
-                                order: 1
+                                order: 1,
+                                pointRadius: 0,
+                                pointHoverRadius: 4
                             },
                             {
                                 label: 'Humedad (%)',
@@ -333,7 +335,9 @@ def charts_dashboard_view(request):
                                 backgroundColor: 'rgba(52, 152, 219, 0.1)',
                                 tension: 0.4,
                                 yAxisID: 'y1',
-                                order: 1
+                                order: 1,
+                                pointRadius: 0,
+                                pointHoverRadius: 4
                             },
                             {
                                 label: 'Calefacción Activa',
@@ -361,6 +365,7 @@ def charts_dashboard_view(request):
                                     display: true,
                                     text: 'Temperatura (°C)'
                                 },
+                                // Rango inicial 15-25°C (ventana de 10°C)
                                 min: 15,
                                 max: 25
                             },
@@ -372,8 +377,9 @@ def charts_dashboard_view(request):
                                     display: true,
                                     text: 'Humedad (%)'
                                 },
-                                min: 30,
-                                max: 70,
+                                // Rango inicial 40-60% (ventana de 20%)
+                                min: 40,
+                                max: 60,
                                 grid: {
                                     drawOnChartArea: false,
                                 }
@@ -488,17 +494,69 @@ def charts_dashboard_view(request):
             }
 
             updateCharts(data) {
-                // Actualizar gráfico combinado de temperatura y humedad
+                // Actualizar datos del gráfico
                 this.tempHumidityChart.data.labels = data.sensor_data.labels;
                 this.tempHumidityChart.data.datasets[0].data = data.sensor_data.temperature;
                 this.tempHumidityChart.data.datasets[1].data = data.sensor_data.humidity;
                 this.tempHumidityChart.data.datasets[2].data = data.sensor_data.heating_background;
+                
+                // Calcular y aplicar rangos dinámicos
+                this.updateDynamicScales(data.sensor_data);
+                
                 this.tempHumidityChart.update('none');
 
                 // Actualizar gráfico de uso mensual
                 this.monthlyUsageChart.data.labels = data.monthly_usage.labels;
                 this.monthlyUsageChart.data.datasets[0].data = data.monthly_usage.hours;
                 this.monthlyUsageChart.update('none');
+            }
+
+            updateDynamicScales(sensorData) {
+                // Calcular rango dinámico para temperatura (ventana de 10°C)
+                const temperatures = sensorData.temperature.filter(t => t !== null && t !== undefined);
+                let tempRange = this.calculateDynamicRange(temperatures, 10, 15, 25);
+                
+                // Calcular rango dinámico para humedad (ventana de 20%)
+                const humidities = sensorData.humidity.filter(h => h !== null && h !== undefined);
+                let humidityRange = this.calculateDynamicRange(humidities, 20, 40, 60);
+                
+                // Actualizar escalas del gráfico
+                this.tempHumidityChart.options.scales.y.min = tempRange.min;
+                this.tempHumidityChart.options.scales.y.max = tempRange.max;
+                this.tempHumidityChart.options.scales.y1.min = humidityRange.min;
+                this.tempHumidityChart.options.scales.y1.max = humidityRange.max;
+            }
+
+            calculateDynamicRange(values, windowSize, defaultMin, defaultMax) {
+                if (!values || values.length === 0) {
+                    return { min: defaultMin, max: defaultMax };
+                }
+
+                const minValue = Math.min(...values);
+                const maxValue = Math.max(...values);
+                const dataRange = maxValue - minValue;
+
+                // Si el rango de datos cabe en la ventana predeterminada, usarla
+                if (minValue >= defaultMin && maxValue <= defaultMax) {
+                    return { min: defaultMin, max: defaultMax };
+                }
+
+                // Si el rango de datos es menor que el tamaño de ventana, centrar la ventana
+                if (dataRange <= windowSize) {
+                    const center = (minValue + maxValue) / 2;
+                    const halfWindow = windowSize / 2;
+                    return {
+                        min: Math.max(0, center - halfWindow), // No bajar de 0 para humedad
+                        max: center + halfWindow
+                    };
+                }
+
+                // Si el rango de datos es mayor que la ventana, usar min/max reales con margen
+                const margin = windowSize * 0.1; // 10% de margen
+                return {
+                    min: Math.max(0, minValue - margin),
+                    max: maxValue + margin
+                };
             }
 
             updateStats(stats) {
@@ -630,7 +688,7 @@ def charts_data_api(request):
             'hours': []
         }
         
-        # Generar datos de ejemplo para los últimos 12 meses
+        # Generar datos reales para los últimos 12 meses
         current_date = now.replace(day=1)  # Primer día del mes actual
         
         for i in range(12):
@@ -641,23 +699,22 @@ def charts_data_api(request):
             # Generar etiqueta del mes
             monthly_data['labels'].insert(0, f"{month_name} {year}")
             
-            # Calcular uso real del mes si hay datos
+            # Calcular uso real del mes basado en períodos de calefacción activa
             month_start = month_date.replace(day=1)
             if month_date.month == 12:
                 next_month = month_date.replace(year=month_date.year + 1, month=1, day=1)
             else:
                 next_month = month_date.replace(month=month_date.month + 1, day=1)
             
-            # Contar logs de calefacción activa en este mes
-            heating_logs_count = HeatingLog.objects.filter(
+            # Obtener todos los logs del mes ordenados por timestamp
+            month_logs = HeatingLog.objects.filter(
                 timestamp__gte=month_start,
-                timestamp__lt=next_month,
-                is_heating=True
-            ).count()
+                timestamp__lt=next_month
+            ).order_by('timestamp')
             
-            # Estimar horas: cada log representa ~20 minutos de operación
-            hours = heating_logs_count * 0.33  # 20 min = 0.33 horas
-            monthly_data['hours'].insert(0, round(hours, 1))
+            # Calcular tiempo real de uso basado en períodos ON/OFF
+            real_hours = calculate_real_heating_time(month_logs)
+            monthly_data['hours'].insert(0, round(real_hours, 1))
         
         # Obtener estadísticas actuales
         current_sensor = SensorReading.objects.filter(
@@ -682,3 +739,37 @@ def charts_data_api(request):
         
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+def calculate_real_heating_time(logs_queryset):
+    """
+    Calcula el tiempo real que la calefacción estuvo encendida
+    basándose en los períodos entre logs de ON y OFF
+    """
+    logs = list(logs_queryset.values('timestamp', 'is_heating').order_by('timestamp'))
+    
+    if not logs:
+        return 0.0
+    
+    total_seconds = 0.0
+    heating_start = None
+    
+    for log in logs:
+        if log['is_heating'] and heating_start is None:
+            # Comienza un período de calefacción
+            heating_start = log['timestamp']
+        elif not log['is_heating'] and heating_start is not None:
+            # Termina un período de calefacción
+            heating_end = log['timestamp']
+            period_seconds = (heating_end - heating_start).total_seconds()
+            total_seconds += period_seconds
+            heating_start = None
+    
+    # Si la calefacción seguía encendida al final del período
+    if heating_start is not None and logs:
+        # Asumir que sigue encendida hasta el último log
+        last_log_time = logs[-1]['timestamp']
+        period_seconds = (last_log_time - heating_start).total_seconds()
+        total_seconds += period_seconds
+    
+    return total_seconds / 3600.0  # Convertir a horas
