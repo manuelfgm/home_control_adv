@@ -512,13 +512,13 @@ def charts_dashboard_view(request):
             }
 
             updateDynamicScales(sensorData) {
-                // Calcular rango dinámico para temperatura (ventana de 10°C)
+                // Calcular rango dinámico para temperatura (ventana de 5°C)
                 const temperatures = sensorData.temperature.filter(t => t !== null && t !== undefined);
-                let tempRange = this.calculateDynamicRange(temperatures, 10, 15, 25);
+                let tempRange = this.calculateDynamicRange(temperatures, 5, 17, 22);
                 
-                // Calcular rango dinámico para humedad (ventana de 20%)
+                // Calcular rango dinámico para humedad (ventana de 10%)
                 const humidities = sensorData.humidity.filter(h => h !== null && h !== undefined);
-                let humidityRange = this.calculateDynamicRange(humidities, 20, 40, 60);
+                let humidityRange = this.calculateDynamicRange(humidities, 10, 50, 60);
                 
                 // Actualizar escalas del gráfico
                 this.tempHumidityChart.options.scales.y.min = tempRange.min;
