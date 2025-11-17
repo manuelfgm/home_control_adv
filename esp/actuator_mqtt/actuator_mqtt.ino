@@ -155,6 +155,7 @@ void processHeatingCommand(String message) {
 
   // Enviar confirmación
   sendStatus();
+  lastStatus = millis();
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -188,7 +189,7 @@ void reconnect() {
       Serial.printf("Suscrito a: %s\n", topic_command.c_str());
       
       // Enviar estado inicial
-      sendStatus();
+      // sendStatus();
       
     } else {
       Serial.print("falló, rc=");
