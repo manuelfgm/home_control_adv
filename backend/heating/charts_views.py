@@ -365,9 +365,9 @@ def charts_dashboard_view(request):
                                     display: true,
                                     text: 'Temperatura (°C)'
                                 },
-                                // Rango inicial 15-25°C (ventana de 10°C)
-                                min: 15,
-                                max: 25
+                                // Rango inicial 17-22°C (ventana de 5°C)
+                                min: 17,
+                                max: 22
                             },
                             y1: {
                                 type: 'linear',
@@ -377,8 +377,8 @@ def charts_dashboard_view(request):
                                     display: true,
                                     text: 'Humedad (%)'
                                 },
-                                // Rango inicial 40-60% (ventana de 20%)
-                                min: 40,
+                                // Rango inicial 40-60% (ventana de 10%)
+                                min: 50,
                                 max: 60,
                                 grid: {
                                     drawOnChartArea: false,
