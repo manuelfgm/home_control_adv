@@ -14,16 +14,27 @@ from .serializers import CurrentStatusSerializer, HeatingSettingsSerializer, Hea
 def test_dashboard_data(request):
     """Vista de prueba para verificar que los datos están disponibles"""
     
-    # Obtener datos directamente
-    settings = HeatingSettings.objects.all()
-    schedules = HeatingSchedule.objects.all()
+    # Obtener datos ordenados por estado: activos, activados, desactivados
+    settings_active = HeatingSettings.objects.filter(is_active=True).order_by('name')
+    settings_inactive = HeatingSettings.objects.filter(is_active=False).order_by('name')
+    settings = list(settings_active) + list(settings_inactive)
+    
+    schedules_all = HeatingSchedule.objects.all()
+    schedules_active_now = [s for s in schedules_all if s.is_active and s.is_active_now()]
+    schedules_enabled_not_now = [s for s in schedules_all if s.is_active and not s.is_active_now()]  
+    schedules_disabled = [s for s in schedules_all if not s.is_active]
+    schedules = schedules_active_now + schedules_enabled_not_now + schedules_disabled
     
     context = {
         'user': request.user,
-        'settings_count': settings.count(),
-        'schedules_count': schedules.count(),
-        'settings_list': [(s.id, s.name, s.is_active) for s in settings],
-        'schedules_list': [(s.id, s.name, s.is_active, s.start_time, s.end_time) for s in schedules],
+        'settings_count': len(settings),
+        'schedules_count': len(schedules),
+        'settings_list': [(s.id, s.name, 'Activada' if s.is_active else 'Desactivada') for s in settings],
+        'schedules_list': [(s.id, s.name, 
+                          'Activo Ahora' if s.is_active and s.is_active_now() 
+                          else 'Activado' if s.is_active 
+                          else 'Desactivado', 
+                          s.start_time, s.end_time) for s in schedules],
     }
     
     if request.GET.get('format') == 'json':
@@ -47,14 +58,14 @@ def test_dashboard_data(request):
         
         <div class="success">✅ Usuario autenticado: {request.user.username}</div>
         
-        <h2>Configuraciones ({settings.count()})</h2>
+        <h2>Configuraciones ({len(settings)})</h2>
         <div class="data">
-        {'<br>'.join([f"ID: {s[0]}, Nombre: {s[1]}, Activa: {s[2]}" for s in context['settings_list']])}
+        {'<br>'.join([f"ID: {s[0]}, Nombre: {s[1]}, Estado: {s[2]}" for s in context['settings_list']])}
         </div>
         
-        <h2>Horarios ({schedules.count()})</h2>
+        <h2>Horarios ({len(schedules)})</h2>
         <div class="data">
-        {'<br>'.join([f"ID: {s[0]}, Nombre: {s[1]}, Activo: {s[2]}, Horario: {s[3]}-{s[4]}" for s in context['schedules_list']])}
+        {'<br>'.join([f"ID: {s[0]}, Nombre: {s[1]}, Estado: {s[2]}, Horario: {s[3]}-{s[4]}" for s in context['schedules_list']])}
         </div>
         
         <h2>Test de APIs con JavaScript</h2>
