@@ -20,6 +20,10 @@ class HeatingSettingsViewSet(viewsets.ModelViewSet):
     serializer_class = HeatingSettingsSerializer
     permission_classes = [IsAuthenticated]
     
+    def get_queryset(self):
+        """Obtener configuraciones ordenadas: activas primero, luego desactivadas"""
+        return HeatingSettings.objects.all().order_by('-is_active', 'name')
+    
     @action(detail=False, methods=['get'])
     def current(self, request):
         """Obtener configuración actual activa"""
@@ -63,8 +67,32 @@ class HeatingScheduleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Obtener todos los horarios ordenados por hora de inicio"""
-        return super().get_queryset().order_by('start_time')
+        """Obtener horarios ordenados: activos primero, luego desactivados"""
+        return super().get_queryset().order_by('-is_active', 'start_time')
+    
+    def list(self, request, *args, **kwargs):
+        """Listar horarios con ordenamiento inteligente por estado actual"""
+        queryset = self.get_queryset()
+        schedules = list(queryset)
+        
+        # Separar por estado actual (necesita evaluar is_active_now())
+        active_now = []
+        enabled_not_now = []
+        disabled = []
+        
+        for schedule in schedules:
+            if not schedule.is_active:
+                disabled.append(schedule)
+            elif schedule.is_active_now():
+                active_now.append(schedule)
+            else:
+                enabled_not_now.append(schedule)
+        
+        # Reordenar: activos ahora, activados, desactivados
+        ordered_schedules = active_now + enabled_not_now + disabled
+        
+        serializer = self.get_serializer(ordered_schedules, many=True)
+        return Response(serializer.data)
     
     def create(self, request, *args, **kwargs):
         """Create con manejo de errores de solapamiento"""
