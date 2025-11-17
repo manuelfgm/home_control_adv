@@ -16,8 +16,31 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.shortcuts import redirect
+from django.http import HttpResponse
+
+def home_redirect(request):
+    """Redirigir la URL raíz al dashboard principal"""
+    return redirect('/heating/dashboard/')
+
+def favicon_view(request):
+    """Servir favicon ICO real"""
+    import os
+    from django.conf import settings
+    
+    favicon_path = os.path.join(settings.BASE_DIR, 'static', 'favicon.ico')
+    
+    try:
+        with open(favicon_path, 'rb') as f:
+            favicon_data = f.read()
+        return HttpResponse(favicon_data, content_type='image/x-icon')
+    except FileNotFoundError:
+        # Fallback a favicon básico si no existe el archivo
+        return HttpResponse(b'', content_type='image/x-icon')
 
 urlpatterns = [
+    path('', home_redirect, name='home'),
+    path('favicon.ico', favicon_view, name='favicon'),
     path('admin/', admin.site.urls),
     path('sensors/', include('sensors.urls')),
     path('actuators/', include('actuators.urls')),

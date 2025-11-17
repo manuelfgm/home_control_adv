@@ -100,15 +100,19 @@ class HeatingDashboard {
             const data = await response.json();
             if (!data) return; // Si no hay datos, salir
             
-            // Actualizar temperatura actual
+            // Actualizar temperatura actual con clases CSS dinámicas
             const currentTemp = data.current_temperature;
-            document.getElementById('current-temp').textContent = 
-                currentTemp ? `${currentTemp}°C` : '--°C';
-            
-            // Actualizar estado de calefacción
             const isHeating = data.is_heating;
+            const tempEl = document.getElementById('current-temp');
+            tempEl.textContent = currentTemp ? `${currentTemp}°C` : '--°C';
+            tempEl.className = isHeating ? 'temperature heating-on' : 'temperature heating-off';
+            
+            // Debug: verificar que se aplican las clases correctas
+            console.log(`Temperature: ${currentTemp}°C, Heating: ${isHeating}, Class: ${tempEl.className}`);
+            
+            // Actualizar estado de calefacción sin iconos
             const statusEl = document.getElementById('heating-status');
-            statusEl.textContent = isHeating ? '🔥 Calefacción ENCENDIDA' : '❄️ Calefacción APAGADA';
+            statusEl.textContent = isHeating ? 'Calefacción encendida' : 'Sistema apagado';
             statusEl.className = isHeating ? 'heating-on' : 'heating-off';
             
             // Actualizar temperatura objetivo
@@ -328,7 +332,7 @@ class HeatingDashboard {
                         <div>
                             <strong>${schedule.name}</strong><br>
                             <small>${schedule.weekdays_display} • ${schedule.start_time} - ${schedule.end_time} • ${schedule.target_temperature}°C</small>
-                            ${schedule.is_active_now ? '<br><small style="color: #e74c3c;">🔥 ACTIVO AHORA</small>' : ''}
+                            ${schedule.is_active_now ? '<br><small style="color: #e74c3c;">ACTIVO AHORA</small>' : ''}
                         </div>
                         <div>
                             <button class="btn btn-success" onclick="dashboard.editSchedule(${schedule.id})">✏️</button>
@@ -526,7 +530,7 @@ class HeatingDashboard {
             console.log('Renderizando', data.length, 'logs'); // Debug
             logsList.innerHTML = data.slice(0, 10).map(log => {
                 const date = new Date(log.timestamp).toLocaleString('es-ES');
-                const status = log.is_heating ? '🔥 ON' : '❄️ OFF';
+                const status = log.is_heating ? 'ON' : 'OFF';
                 const temp = log.current_temperature ? `${log.current_temperature}°C` : '--';
                 const target = log.target_temperature ? `→ ${log.target_temperature}°C` : '';
                 

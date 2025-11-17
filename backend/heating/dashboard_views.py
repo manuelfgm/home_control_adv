@@ -138,18 +138,63 @@ def dashboard_view(request):
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Dashboard Calefacción</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
+    <title>🏠 Dashboard Calefacción</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { background: #6c757d; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f8f9fa; color: #333; }
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+        .header { background: #6c757d; color: white; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header h1 { font-size: 1.5rem; font-weight: 600; margin: 0; }
+        .nav-links { display: flex; gap: 1rem; }
+        .nav-links a { color: white; text-decoration: none; padding: 0.5rem 1rem; border-radius: 4px; background: rgba(255,255,255,0.1); transition: background 0.2s; }
+        .nav-links a:hover { background: rgba(255,255,255,0.2); }
+        
+        .status-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        .status-card h3 {
+            margin-top: 0;
+            color: #6c757d;
+            font-size: 1.2rem;
+        }
+        
+        .temperature {
+            font-size: 2em;
+            margin: 10px 0;
+            font-weight: bold;
+            /* Color dinámico aplicado por JavaScript */
+        }
+        
+        .heating-on {
+            color: #e74c3c !important;
+        }
+        
+        .heating-off {
+            color: #95a5a6 !important;
+        }
+        
+        .status-info {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            text-align: center;
+        }
+        
+        .status-info > div {
+            flex: 1;
+        }
+        
         .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .card h3 { margin-top: 0; color: #6c757d; }
         .status { text-align: center; }
-        .temperature { font-size: 2em; margin: 10px 0; }
-        .heating-on { color: #e74c3c; }
-        .heating-off { color: #95a5a6; }
         .btn { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin: 5px; }
         .btn-primary { background: #6c757d; color: white; }
         .btn-success { background: #495057; color: white; }
@@ -172,38 +217,55 @@ def dashboard_view(request):
         .alert { padding: 10px; margin: 10px 0; border-radius: 4px; }
         .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        
+        @media (max-width: 768px) {
+            .header {
+                padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .controls {
+                justify-content: center;
+            }
+
+            .container {
+                padding: 0 0.5rem;
+            }
+        }
     </style>
 </head>
 <body>
+    <header class="header">
+        <div>
+            <h1>🏠 Dashboard Calefacción</h1>
+        </div>
+        <nav class="nav-links">
+            <a href="/heating/charts/">📊 Gráficas</a>
+            <a href="/admin/logout/" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">🔚 Salir</a>
+        </nav>
+    </header>
+
+    <form id="logout-form" method="post" action="/admin/logout/" style="display: none;">
+        <input type="hidden" name="csrfmiddlewaretoken" value="CSRF_TOKEN_PLACEHOLDER">
+    </form>
+
     <div class="container">
-        <header class="header">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h1>🏠 Dashboard Calefacción</h1>
-                    <p>Control y monitoreo del sistema de calefacción</p>
-                </div>
-                <div style="text-align: right;">
-                    <p>👤 Usuario: <strong>USERNAME_PLACEHOLDER</strong></p>
-                    <form method="post" action="/admin/logout/" style="display: inline;">
-                        <input type="hidden" name="csrfmiddlewaretoken" value="CSRF_TOKEN_PLACEHOLDER">
-                        <button type="submit" class="btn btn-success" title="Cerrar Sesión" style="font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif; font-variant-emoji: text; border: none;">📴</button>
-                    </form>
-                </div>
-            </div>
-        </header>
 
         <div id="alerts"></div>
 
-        <div class="cards">
-            <!-- Estado Actual -->
-            <div class="card status">
-                <h3>Estado Actual</h3>
-                <div class="temperature" id="current-temp">--°C</div>
-                <div id="heating-status">Sistema apagado</div>
+        <!-- Estado Actual -->
+        <div class="status-card">
+            <h3>Estado Actual</h3>
+            <div class="temperature" id="current-temp">--°C</div>
+            <div id="heating-status">Sistema apagado</div>
+            <div class="status-info">
                 <div>Objetivo: <span id="target-temp">--°C</span></div>
                 <div>Horario: <span id="current-schedule">--</span></div>
             </div>
         </div>
+
+        <div class="cards">
 
         <!-- Horarios de Calefacción (primero para móvil) -->
         <div class="card">
@@ -313,7 +375,11 @@ def dashboard_view(request):
         </div>
     </div>
 
-    <script src="/static/js/dashboard.js?v=2024-11-14"></script>
+    <script src="/static/js/dashboard.js?v=2024-11-17-final"></script>
+    <script>
+        // El JavaScript externo ya maneja todo correctamente
+        // No necesitamos JavaScript adicional aquí
+    </script>
 </body>
 </html>
     """
