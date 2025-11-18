@@ -365,8 +365,8 @@ def charts_dashboard_view(request):
                                     display: true,
                                     text: 'Temperatura (°C)'
                                 },
-                                // Rango inicial 17-22°C (ventana de 5°C)
-                                min: 17,
+                                // Rango inicial 18-22°C (ventana de 4°C)
+                                min: 18,
                                 max: 22
                             },
                             y1: {
@@ -512,13 +512,13 @@ def charts_dashboard_view(request):
             }
 
             updateDynamicScales(sensorData) {
-                // Calcular rango dinámico para temperatura (ventana de 5°C)
+                // Calcular rango dinámico para temperatura (18-22°C por defecto, mínimo 4°C)
                 const temperatures = sensorData.temperature.filter(t => t !== null && t !== undefined);
-                let tempRange = this.calculateDynamicRange(temperatures, 5, 17, 22);
+                let tempRange = this.calculateTemperatureRange(temperatures);
                 
                 // Calcular rango dinámico para humedad (ventana de 10%)
                 const humidities = sensorData.humidity.filter(h => h !== null && h !== undefined);
-                let humidityRange = this.calculateDynamicRange(humidities, 10, 50, 60);
+                let humidityRange = this.calculateHumidityRange(humidities);
                 
                 // Actualizar escalas del gráfico
                 this.tempHumidityChart.options.scales.y.min = tempRange.min;
@@ -527,32 +527,64 @@ def charts_dashboard_view(request):
                 this.tempHumidityChart.options.scales.y1.max = humidityRange.max;
             }
 
-            calculateDynamicRange(values, windowSize, defaultMin, defaultMax) {
-                if (!values || values.length === 0) {
+            calculateTemperatureRange(temperatures) {
+                // Rango por defecto cuando no hay datos: 18-22°C
+                const defaultMin = 18;
+                const defaultMax = 22;
+                const desiredWindow = 4; // Ventana deseable de 4°C
+                
+                if (!temperatures || temperatures.length === 0) {
                     return { min: defaultMin, max: defaultMax };
                 }
 
-                const minValue = Math.min(...values);
-                const maxValue = Math.max(...values);
-                const dataRange = maxValue - minValue;
+                const minTemp = Math.min(...temperatures);
+                const maxTemp = Math.max(...temperatures);
+                const dataRange = maxTemp - minTemp;
 
-                // Si el rango de datos cabe en la ventana predeterminada, usarla
-                if (minValue >= defaultMin && maxValue <= defaultMax) {
-                    return { min: defaultMin, max: defaultMax };
-                }
-
-                // Si el rango de datos es menor que el tamaño de ventana, centrar la ventana
-                if (dataRange <= windowSize) {
-                    const center = (minValue + maxValue) / 2;
-                    const halfWindow = windowSize / 2;
+                // Si los datos caben en una ventana de 4°C, centrar la ventana en los datos
+                if (dataRange <= desiredWindow) {
+                    const center = (minTemp + maxTemp) / 2;
+                    const halfWindow = desiredWindow / 2;
                     return {
-                        min: Math.max(0, center - halfWindow), // No bajar de 0 para humedad
+                        min: center - halfWindow,
                         max: center + halfWindow
                     };
                 }
 
-                // Si el rango de datos es mayor que la ventana, usar min/max reales con margen
-                const margin = windowSize * 0.1; // 10% de margen
+                // Si los datos tienen más amplitud que 4°C, usar el rango completo de los datos
+                const margin = 0.5; // Pequeño margen para visualización
+                return {
+                    min: minTemp - margin,
+                    max: maxTemp + margin
+                };
+            }
+
+            calculateHumidityRange(humidities) {
+                // Rango por defecto cuando no hay datos: 50-60%
+                const defaultMin = 50;
+                const defaultMax = 60;
+                const desiredWindow = 10; // Ventana deseable de 10%
+                
+                if (!humidities || humidities.length === 0) {
+                    return { min: defaultMin, max: defaultMax };
+                }
+
+                const minValue = Math.min(...humidities);
+                const maxValue = Math.max(...humidities);
+                const dataRange = maxValue - minValue;
+
+                // Si los datos caben en una ventana de 10%, centrar la ventana en los datos
+                if (dataRange <= desiredWindow) {
+                    const center = (minValue + maxValue) / 2;
+                    const halfWindow = desiredWindow / 2;
+                    return {
+                        min: Math.max(0, center - halfWindow), // No bajar de 0%
+                        max: center + halfWindow
+                    };
+                }
+
+                // Si los datos tienen más amplitud que 10%, usar el rango completo de los datos
+                const margin = 1; // Pequeño margen para visualización
                 return {
                     min: Math.max(0, minValue - margin),
                     max: maxValue + margin
