@@ -36,6 +36,8 @@ class SensorReading(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['sensor_id', '-created_at']),
+            models.Index(fields=['-created_at']),  # Para consultas de gráficas por fecha
+            models.Index(fields=['temperature', '-created_at']),  # Para filtros de temperatura no nula
         ]
     
     def __str__(self):

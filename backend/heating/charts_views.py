@@ -6,6 +6,7 @@ from django.db.models import Q, Count
 from datetime import datetime, timedelta
 import json
 import calendar
+import time
 
 from sensors.models import SensorReading
 from .models import HeatingLog
@@ -268,6 +269,13 @@ def charts_dashboard_view(request):
             </div>
 
             <div class="chart-card">
+                <div class="chart-title">Uso Diario de Calefacción (Últimos 30 Días)</div>
+                <div class="chart-container">
+                    <canvas id="dailyUsageChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
                 <div class="chart-title">Uso Mensual de Calefacción</div>
                 <div class="chart-container">
                     <canvas id="monthlyUsageChart"></canvas>
@@ -281,6 +289,7 @@ def charts_dashboard_view(request):
             constructor() {
                 this.currentPeriod = '24h';
                 this.tempHumidityChart = null;
+                this.dailyUsageChart = null;
                 this.monthlyUsageChart = null;
                 this.csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
                 
@@ -402,6 +411,58 @@ def charts_dashboard_view(request):
                     }
                 });
 
+                // Gráfico de uso diario de calefacción (últimos 30 días)
+                const dailyCtx = document.getElementById('dailyUsageChart').getContext('2d');
+                this.dailyUsageChart = new Chart(dailyCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [
+                            {
+                                label: 'Horas de Uso',
+                                data: [],
+                                backgroundColor: 'rgba(52, 152, 219, 0.8)',
+                                borderColor: 'rgba(52, 152, 219, 1)',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Horas'
+                                },
+                                grid: {
+                                    color: 'rgba(0,0,0,0.1)'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Fecha'
+                                },
+                                grid: {
+                                    display: false
+                                },
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 0
+                                }
+                            }
+                        }
+                    }
+                });
+
                 // Gráfico de uso mensual de calefacción
                 const monthlyCtx = document.getElementById('monthlyUsageChart').getContext('2d');
                 this.monthlyUsageChart = new Chart(monthlyCtx, {
@@ -504,6 +565,11 @@ def charts_dashboard_view(request):
                 this.updateDynamicScales(data.sensor_data);
                 
                 this.tempHumidityChart.update('none');
+
+                // Actualizar gráfico de uso diario
+                this.dailyUsageChart.data.labels = data.daily_usage.labels;
+                this.dailyUsageChart.data.datasets[0].data = data.daily_usage.hours;
+                this.dailyUsageChart.update('none');
 
                 // Actualizar gráfico de uso mensual
                 this.monthlyUsageChart.data.labels = data.monthly_usage.labels;
@@ -634,9 +700,11 @@ def charts_dashboard_view(request):
 
 @login_required
 def charts_data_api(request):
-    """API endpoint para obtener datos de gráficas"""
+    """API endpoint para obtener datos de gráficas - OPTIMIZADO"""
+    start_time_debug = time.time()
     try:
         period = request.GET.get('period', '24h')
+        print(f"[DEBUG] Iniciando charts_data_api para período: {period}")
         
         # Calcular rango de fechas
         now = timezone.now()
@@ -649,18 +717,36 @@ def charts_data_api(request):
         else:
             start_time = now - timedelta(hours=24)
         
-        # Obtener datos de sensores
+        # Determinar intervalo de muestreo según el período para optimizar rendimiento
+        if period == '24h':
+            # Últimas 24h: un punto cada 5 minutos (288 puntos)
+            sample_interval = 5
+            max_points = 288
+        elif period == '7d':
+            # Últimos 7 días: un punto cada 30 minutos (336 puntos)
+            sample_interval = 30
+            max_points = 336
+        elif period == '30d':
+            # Últimos 30 días: un punto cada 2 horas (360 puntos)
+            sample_interval = 120
+            max_points = 360
+        else:
+            sample_interval = 5
+            max_points = 288
+            
+        # Obtener datos de sensores con muestreo optimizado
+        # En lugar de obtener todos los registros, obtenemos muestras representativas
         sensor_readings = SensorReading.objects.filter(
             created_at__gte=start_time,
             temperature__isnull=False
         ).order_by('created_at')
         
-        # Obtener datos de calefacción
+        # Obtener datos de calefacción con muestreo optimizado
         heating_logs = HeatingLog.objects.filter(
             timestamp__gte=start_time
         ).order_by('timestamp')
         
-        # Procesar datos de sensores
+        # Procesar datos de sensores con muestreo inteligente
         sensor_data = {
             'labels': [],
             'temperature': [],
@@ -668,35 +754,55 @@ def charts_data_api(request):
             'heating_background': []
         }
         
+        # Convertir a lista para procesamiento más eficiente
+        sensor_list = list(sensor_readings.values('created_at', 'temperature', 'humidity'))
+        heating_list = list(heating_logs.values('timestamp', 'is_heating'))
+        
         # Debug: añadir información sobre los datos encontrados
-        sensor_count = sensor_readings.count()
+        sensor_count = len(sensor_list)
         
-        # Crear un diccionario de estado de calefacción por tiempo
+        # Crear un diccionario de estado de calefacción por tiempo para búsqueda rápida
         heating_status_by_time = {}
-        for log in heating_logs:
-            heating_status_by_time[log.timestamp] = log.is_heating
+        for log in heating_list:
+            heating_status_by_time[log['timestamp']] = log['is_heating']
         
-        for reading in sensor_readings:
+        # Implementar muestreo inteligente para reducir puntos
+        if sensor_count > max_points:
+            # Calcular paso de muestreo
+            step = max(1, sensor_count // max_points)
+            sampled_sensors = sensor_list[::step]
+        else:
+            sampled_sensors = sensor_list
+        
+        # Debug: información sobre muestreo
+        print(f"Procesando {len(sampled_sensors)} puntos de {sensor_count} totales para período {period}")
+        
+        for reading in sampled_sensors:
             # Formato de fecha según el período
+            created_at = reading['created_at']
             if period == '24h':
-                label = reading.created_at.strftime('%H:%M')
+                label = created_at.strftime('%H:%M')
             elif period == '7d':
-                label = reading.created_at.strftime('%d/%m %H:%M')
+                label = created_at.strftime('%d/%m %H:%M')
             else:  # 30d
-                label = reading.created_at.strftime('%d/%m')
+                label = created_at.strftime('%d/%m')
                 
             sensor_data['labels'].append(label)
-            sensor_data['temperature'].append(reading.temperature)
-            sensor_data['humidity'].append(reading.humidity or 0)
+            sensor_data['temperature'].append(reading['temperature'])
+            sensor_data['humidity'].append(reading['humidity'] or 0)
             
-            # Encontrar el estado de calefacción más cercano en tiempo
+            # Encontrar el estado de calefacción más cercano en tiempo (optimizado)
             closest_heating = None
-            min_diff = float('inf')
-            for log_time, is_heating in heating_status_by_time.items():
-                diff = abs((reading.created_at - log_time).total_seconds())
-                if diff < min_diff:
-                    min_diff = diff
-                    closest_heating = is_heating
+            if heating_status_by_time:
+                # Buscar el log de calefacción más cercano de manera eficiente
+                closest_time = min(heating_status_by_time.keys(), 
+                                 key=lambda x: abs((created_at - x).total_seconds()),
+                                 default=None)
+                
+                if closest_time:
+                    diff = abs((created_at - closest_time).total_seconds())
+                    if diff < 600:  # 10 minutos de tolerancia
+                        closest_heating = heating_status_by_time[closest_time]
             
             # Agregar valor para fondo de calefacción (30 si está encendida, 0 si no)
             sensor_data['heating_background'].append(30 if closest_heating else 0)
@@ -712,6 +818,47 @@ def charts_data_api(request):
                 sensor_data['humidity'].append(50 + i * 2)
                 sensor_data['heating_background'].append(30 if i % 3 == 0 else 0)  # Ejemplo
         
+        # Calcular uso diario de calefacción (últimos 30 días) - OPTIMIZADO
+        daily_data = {
+            'labels': [],
+            'hours': []
+        }
+        
+        # Optimización: obtener todos los logs de los últimos 30 días de una vez
+        thirty_days_ago = now.date() - timedelta(days=30)
+        thirty_days_start = timezone.make_aware(datetime.combine(thirty_days_ago, datetime.min.time()))
+        
+        # Una sola consulta para todos los logs de 30 días
+        all_daily_logs = list(HeatingLog.objects.filter(
+            timestamp__gte=thirty_days_start
+        ).values('timestamp', 'is_heating').order_by('timestamp'))
+        
+        # Agrupar logs por día para procesamiento eficiente
+        logs_by_day = {}
+        for log in all_daily_logs:
+            day_key = log['timestamp'].date()
+            if day_key not in logs_by_day:
+                logs_by_day[day_key] = []
+            logs_by_day[day_key].append(log)
+        
+        # Procesar cada día
+        for i in range(30):
+            day_date = now.date() - timedelta(days=i)
+            day_label = day_date.strftime('%d/%m')  # Formato: 18/11
+            
+            # Generar etiqueta del día
+            daily_data['labels'].insert(0, day_label)
+            
+            # Calcular uso del día usando los logs agrupados
+            day_logs_dict = logs_by_day.get(day_date, [])
+            if day_logs_dict:
+                # Calcular horas directamente desde la lista de diccionarios
+                real_hours = calculate_heating_time_from_dict_list(day_logs_dict)
+            else:
+                real_hours = 0.0
+                
+            daily_data['hours'].insert(0, round(real_hours, 1))
+
         # Calcular uso mensual de calefacción (últimos 12 meses)
         # Simplificado para evitar problemas de compatibilidad con bases de datos
         
@@ -748,12 +895,12 @@ def charts_data_api(request):
             real_hours = calculate_real_heating_time(month_logs)
             monthly_data['hours'].insert(0, round(real_hours, 1))
         
-        # Obtener estadísticas actuales
+        # Obtener estadísticas actuales (optimizado)
         current_sensor = SensorReading.objects.filter(
             temperature__isnull=False
-        ).first()
+        ).order_by('-created_at').first()
         
-        current_heating = HeatingLog.objects.first()
+        current_heating = HeatingLog.objects.order_by('-timestamp').first()
         
         current_stats = {
             'temperature': current_sensor.temperature if current_sensor else None,
@@ -762,16 +909,57 @@ def charts_data_api(request):
             'target_temperature': current_heating.target_temperature if current_heating else None,
         }
         
+        end_time_debug = time.time()
+        processing_time = round(end_time_debug - start_time_debug, 2)
+        print(f"[DEBUG] charts_data_api completado en {processing_time}s para período {period}")
+        
         return JsonResponse({
             'sensor_data': sensor_data,
+            'daily_usage': daily_data,
             'monthly_usage': monthly_data,
             'current_stats': current_stats,
-            'period': period
+            'period': period,
+            'debug_info': {
+                'processing_time': processing_time,
+                'sensor_points': len(sampled_sensors),
+                'total_sensor_records': sensor_count
+            }
         })
         
     except Exception as e:
+        print(f"[ERROR] charts_data_api falló: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
+def calculate_heating_time_from_dict_list(logs_dict_list):
+    """
+    Versión optimizada que calcula tiempo directamente desde lista de diccionarios
+    """
+    if not logs_dict_list:
+        return 0.0
+    
+    total_seconds = 0.0
+    heating_start = None
+    
+    for log in logs_dict_list:
+        if log['is_heating'] and heating_start is None:
+            # Comienza un período de calefacción
+            heating_start = log['timestamp']
+        elif not log['is_heating'] and heating_start is not None:
+            # Termina un período de calefacción
+            heating_end = log['timestamp']
+            period_seconds = (heating_end - heating_start).total_seconds()
+            total_seconds += period_seconds
+            heating_start = None
+    
+    # Si la calefacción seguía encendida al final del período
+    if heating_start is not None and logs_dict_list:
+        # Asumir que sigue encendida hasta el último log
+        last_log_time = logs_dict_list[-1]['timestamp']
+        period_seconds = (last_log_time - heating_start).total_seconds()
+        total_seconds += period_seconds
+    
+    return total_seconds / 3600.0  # Convertir a horas
 
 def calculate_real_heating_time(logs_queryset):
     """
