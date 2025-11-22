@@ -253,9 +253,9 @@ def charts_dashboard_view(request):
 
         <div class="controls">
             <div class="time-selector">
-                <button class="btn btn-primary btn-active" data-period="24h">Últimas 24h</button>
+                <button class="btn btn-primary" data-period="12h">Últimas 12h</button>
+                <button class="btn btn-primary btn-active" data-period="24h">Último día</button>
                 <button class="btn btn-primary" data-period="7d">Última semana</button>
-                <button class="btn btn-primary" data-period="30d">Último mes</button>
             </div>
             <button class="refresh-btn" onclick="charts.refreshData()">🔄 Actualizar</button>
         </div>
@@ -708,17 +708,21 @@ def charts_data_api(request):
         
         # Calcular rango de fechas
         now = timezone.now()
-        if period == '24h':
+        if period == '12h':
+            start_time = now - timedelta(hours=12)
+        elif period == '24h':
             start_time = now - timedelta(hours=24)
         elif period == '7d':
             start_time = now - timedelta(days=7)
-        elif period == '30d':
-            start_time = now - timedelta(days=30)
         else:
             start_time = now - timedelta(hours=24)
         
         # Determinar intervalo de muestreo según el período para optimizar rendimiento
-        if period == '24h':
+        if period == '12h':
+            # Últimas 12h: un punto cada 3 minutos (240 puntos)
+            sample_interval = 3
+            max_points = 240
+        elif period == '24h':
             # Últimas 24h: un punto cada 5 minutos (288 puntos)
             sample_interval = 5
             max_points = 288
@@ -726,10 +730,6 @@ def charts_data_api(request):
             # Últimos 7 días: un punto cada 30 minutos (336 puntos)
             sample_interval = 30
             max_points = 336
-        elif period == '30d':
-            # Últimos 30 días: un punto cada 2 horas (360 puntos)
-            sample_interval = 120
-            max_points = 360
         else:
             sample_interval = 5
             max_points = 288
@@ -780,12 +780,12 @@ def charts_data_api(request):
         for reading in sampled_sensors:
             # Formato de fecha según el período
             created_at = reading['created_at']
-            if period == '24h':
+            if period == '12h' or period == '24h':
                 label = created_at.strftime('%H:%M')
             elif period == '7d':
                 label = created_at.strftime('%d/%m %H:%M')
-            else:  # 30d
-                label = created_at.strftime('%d/%m')
+            else:
+                label = created_at.strftime('%H:%M')
                 
             sensor_data['labels'].append(label)
             sensor_data['temperature'].append(reading['temperature'])
@@ -811,9 +811,17 @@ def charts_data_api(request):
         if sensor_count == 0:
             # Generar algunas muestras de ejemplo
             for i in range(10):
-                time_offset = timedelta(hours=i * (24 if period == '24h' else 24*7 if period == '7d' else 24*30) / 10)
+                if period == '12h':
+                    time_offset = timedelta(hours=i * 12 / 10)
+                elif period == '24h':
+                    time_offset = timedelta(hours=i * 24 / 10)
+                elif period == '7d':
+                    time_offset = timedelta(hours=i * 24*7 / 10)
+                else:
+                    time_offset = timedelta(hours=i * 24 / 10)
+                    
                 sample_time = start_time + time_offset
-                sensor_data['labels'].append(sample_time.strftime('%H:%M' if period == '24h' else '%d/%m'))
+                sensor_data['labels'].append(sample_time.strftime('%H:%M' if period in ['12h', '24h'] else '%d/%m %H:%M'))
                 sensor_data['temperature'].append(20 + i * 0.5)
                 sensor_data['humidity'].append(50 + i * 2)
                 sensor_data['heating_background'].append(30 if i % 3 == 0 else 0)  # Ejemplo
