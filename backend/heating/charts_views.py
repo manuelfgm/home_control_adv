@@ -125,6 +125,12 @@ def charts_dashboard_view(request):
             align-items: center;
         }
 
+        .control-buttons {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
         .time-selector {
             display: flex;
             gap: 0.5rem;
@@ -137,6 +143,9 @@ def charts_dashboard_view(request):
             cursor: pointer;
             font-size: 0.9rem;
             transition: all 0.2s;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
         }
 
         .btn-primary {
@@ -151,6 +160,15 @@ def charts_dashboard_view(request):
         .btn-active {
             background: #495057 !important;
             color: white !important;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #545b62;
         }
 
         .charts-grid {
@@ -214,14 +232,71 @@ def charts_dashboard_view(request):
 
             .controls {
                 justify-content: center;
+                flex-wrap: wrap;
+                gap: 0.5rem;
             }
 
             .container {
                 padding: 0 0.5rem;
             }
+
+            /* Gráficas apiladas verticalmente en móvil */
+            .charts-grid {
+                grid-template-columns: 1fr !important;
+                gap: 1rem;
+            }
+
+            /* Aumentar altura de gráficas en móvil */
+            .chart-container {
+                height: 350px !important;
+                padding: 1rem;
+            }
+
+            /* Botones más grandes para touch */
+            .btn {
+                padding: 12px 16px !important;
+                font-size: 14px !important;
+                min-width: 80px;
+                touch-action: manipulation;
+            }
+
+            .refresh-btn {
+                padding: 12px 20px !important;
+                font-size: 16px !important;
+                min-width: 120px;
+            }
+
+            /* Time selector como dropdown en móvil */
+            .time-selector {
+                width: 100%;
+                justify-content: center;
+                margin-bottom: 1rem;
+            }
+
+            .time-selector button {
+                flex: 1;
+                max-width: 100px;
+            }
+
+            /* Statscard más compacta */
+            .stats-card {
+                padding: 1rem !important;
+                margin-bottom: 1rem;
+            }
+
+            .stats-card .temperature {
+                font-size: 2em !important;
+            }
+
+            /* Títulos de gráficas más pequeños */
+            .chart-title {
+                font-size: 1.1rem !important;
+                padding: 0.75rem 1rem !important;
+            }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
     <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
 </head>
 <body>
@@ -257,7 +332,10 @@ def charts_dashboard_view(request):
                 <button class="btn btn-primary btn-active" data-period="24h">Último día</button>
                 <button class="btn btn-primary" data-period="7d">Última semana</button>
             </div>
-            <button class="refresh-btn" onclick="charts.refreshData()">🔄 Actualizar</button>
+            <div class="control-buttons">
+                <button class="btn btn-secondary" onclick="charts.resetZoom()">🔍 Reset Zoom</button>
+                <button class="refresh-btn" onclick="charts.refreshData()">🔄 Actualizar</button>
+            </div>
         </div>
 
         <div class="charts-grid">
@@ -405,7 +483,40 @@ def charts_dashboard_view(request):
                         },
                         plugins: {
                             legend: {
-                                position: 'top'
+                                position: 'top',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 15
+                                }
+                            },
+                            zoom: {
+                                pan: {
+                                    enabled: true,
+                                    mode: 'x',
+                                    threshold: 5
+                                },
+                                zoom: {
+                                    wheel: {
+                                        enabled: false
+                                    },
+                                    pinch: {
+                                        enabled: true
+                                    },
+                                    mode: 'x'
+                                }
+                            }
+                        },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        // Optimizaciones para móviles
+                        animation: {
+                            duration: window.innerWidth < 768 ? 300 : 1000
+                        },
+                        elements: {
+                            point: {
+                                hoverRadius: window.innerWidth < 768 ? 8 : 4
                             }
                         }
                     }
@@ -677,6 +788,18 @@ def charts_dashboard_view(request):
             refreshData() {
                 this.loadData();
             }
+
+            resetZoom() {
+                if (this.tempHumidityChart && this.tempHumidityChart.resetZoom) {
+                    this.tempHumidityChart.resetZoom();
+                }
+                if (this.dailyUsageChart && this.dailyUsageChart.resetZoom) {
+                    this.dailyUsageChart.resetZoom();
+                }
+                if (this.monthlyUsageChart && this.monthlyUsageChart.resetZoom) {
+                    this.monthlyUsageChart.resetZoom();
+                }
+            }
         }
 
         // Inicializar cuando se carga la página
@@ -718,21 +841,21 @@ def charts_data_api(request):
             start_time = now - timedelta(hours=24)
         
         # Determinar intervalo de muestreo según el período para optimizar rendimiento
+        # Reducir puntos en móviles para mejor legibilidad
+        is_mobile = request.META.get('HTTP_USER_AGENT', '').lower()
+        mobile_detected = any(x in is_mobile for x in ['mobile', 'android', 'iphone', 'ipod'])
+        
         if period == '12h':
-            # Últimas 12h: un punto cada 3 minutos (240 puntos)
-            sample_interval = 3
-            max_points = 240
+            # Últimas 12h
+            max_points = 120 if mobile_detected else 240
         elif period == '24h':
-            # Últimas 24h: un punto cada 5 minutos (288 puntos)
-            sample_interval = 5
-            max_points = 288
+            # Últimas 24h  
+            max_points = 144 if mobile_detected else 288
         elif period == '7d':
-            # Últimos 7 días: un punto cada 30 minutos (336 puntos)
-            sample_interval = 30
-            max_points = 336
+            # Últimos 7 días
+            max_points = 168 if mobile_detected else 336
         else:
-            sample_interval = 5
-            max_points = 288
+            max_points = 144 if mobile_detected else 288
             
         # Obtener datos de sensores con muestreo optimizado
         # En lugar de obtener todos los registros, obtenemos muestras representativas
