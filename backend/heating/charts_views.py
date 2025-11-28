@@ -901,14 +901,16 @@ def charts_data_api(request):
         print(f"Procesando {len(sampled_sensors)} puntos de {sensor_count} totales para período {period}")
         
         for reading in sampled_sensors:
-            # Formato de fecha según el período
-            created_at = reading['created_at']
+            # Formato de fecha según el período - CONVERTIR A HORA LOCAL
+            created_at_utc = reading['created_at']
+            created_at_local = timezone.localtime(created_at_utc)
+            
             if period == '12h' or period == '24h':
-                label = created_at.strftime('%H:%M')
+                label = created_at_local.strftime('%H:%M')
             elif period == '7d':
-                label = created_at.strftime('%d/%m %H:%M')
+                label = created_at_local.strftime('%d/%m %H:%M')
             else:
-                label = created_at.strftime('%H:%M')
+                label = created_at_local.strftime('%H:%M')
                 
             sensor_data['labels'].append(label)
             sensor_data['temperature'].append(reading['temperature'])
@@ -944,7 +946,8 @@ def charts_data_api(request):
                     time_offset = timedelta(hours=i * 24 / 10)
                     
                 sample_time = start_time + time_offset
-                sensor_data['labels'].append(sample_time.strftime('%H:%M' if period in ['12h', '24h'] else '%d/%m %H:%M'))
+                sample_time_local = timezone.localtime(sample_time)
+                sensor_data['labels'].append(sample_time_local.strftime('%H:%M' if period in ['12h', '24h'] else '%d/%m %H:%M'))
                 sensor_data['temperature'].append(20 + i * 0.5)
                 sensor_data['humidity'].append(50 + i * 2)
                 sensor_data['heating_background'].append(30 if i % 3 == 0 else 0)  # Ejemplo
@@ -955,8 +958,9 @@ def charts_data_api(request):
             'hours': []
         }
         
-        # Optimización: obtener todos los logs de los últimos 30 días de una vez
-        thirty_days_ago = now.date() - timedelta(days=30)
+        # Calcular uso diario con hora local
+        now_local = timezone.localtime(now)
+        thirty_days_ago = now_local.date() - timedelta(days=30)
         thirty_days_start = timezone.make_aware(datetime.combine(thirty_days_ago, datetime.min.time()))
         
         # Una sola consulta para todos los logs de 30 días
@@ -964,17 +968,19 @@ def charts_data_api(request):
             timestamp__gte=thirty_days_start
         ).values('timestamp', 'is_heating').order_by('timestamp'))
         
-        # Agrupar logs por día para procesamiento eficiente
+        # Agrupar logs por día para procesamiento eficiente - USAR HORA LOCAL
         logs_by_day = {}
         for log in all_daily_logs:
-            day_key = log['timestamp'].date()
+            # Convertir timestamp UTC a hora local antes de obtener la fecha
+            local_timestamp = timezone.localtime(log['timestamp'])
+            day_key = local_timestamp.date()
             if day_key not in logs_by_day:
                 logs_by_day[day_key] = []
             logs_by_day[day_key].append(log)
         
         # Procesar cada día
         for i in range(30):
-            day_date = now.date() - timedelta(days=i)
+            day_date = now_local.date() - timedelta(days=i)
             day_label = day_date.strftime('%d/%m')  # Formato: 18/11
             
             # Generar etiqueta del día
