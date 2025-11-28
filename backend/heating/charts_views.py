@@ -413,7 +413,8 @@ def charts_dashboard_view(request):
                                 yAxisID: 'y',
                                 order: 1,
                                 pointRadius: 0,
-                                pointHoverRadius: 4
+                                pointHoverRadius: 4,
+                                spanGaps: true
                             },
                             {
                                 label: 'Humedad (%)',
@@ -424,7 +425,8 @@ def charts_dashboard_view(request):
                                 yAxisID: 'y1',
                                 order: 1,
                                 pointRadius: 0,
-                                pointHoverRadius: 4
+                                pointHoverRadius: 4,
+                                spanGaps: true
                             },
                             {
                                 label: 'Calefacción Activa',
@@ -889,47 +891,89 @@ def charts_data_api(request):
         for log in heating_list:
             heating_status_by_time[log['timestamp']] = log['is_heating']
         
-        # Implementar muestreo inteligente para reducir puntos
-        if sensor_count > max_points:
-            # Calcular paso de muestreo
-            step = max(1, sensor_count // max_points)
-            sampled_sensors = sensor_list[::step]
-        else:
-            sampled_sensors = sensor_list
+        # Generar timeline fijo para mostrar siempre las últimas 24h/12h completas
+        now_local = timezone.localtime(now)
         
-        # Debug: información sobre muestreo
-        print(f"Procesando {len(sampled_sensors)} puntos de {sensor_count} totales para período {period}")
-        
-        for reading in sampled_sensors:
-            # Formato de fecha según el período - CONVERTIR A HORA LOCAL
-            created_at_utc = reading['created_at']
-            created_at_local = timezone.localtime(created_at_utc)
+        # Crear diccionarios para búsqueda rápida de datos por timestamp
+        sensors_by_time = {}
+        for reading in sensor_list:
+            sensors_by_time[reading['created_at']] = reading
             
+        # Generar puntos temporales fijos desde ahora hacia atrás
+        time_points = []
+        if period == '12h':
+            # Generar un punto cada 5 minutos para las últimas 12 horas
+            for i in range(144):  # 12 * 60 / 5 = 144 puntos
+                point_time = now - timedelta(minutes=i * 5)
+                time_points.append(point_time)
+        elif period == '24h':
+            # Generar un punto cada 10 minutos para las últimas 24 horas  
+            for i in range(144):  # 24 * 60 / 10 = 144 puntos
+                point_time = now - timedelta(minutes=i * 10)
+                time_points.append(point_time)
+        elif period == '7d':
+            # Generar un punto cada 60 minutos para la última semana
+            for i in range(168):  # 7 * 24 = 168 puntos
+                point_time = now - timedelta(hours=i)
+                time_points.append(point_time)
+        else:
+            # Default: 24h con puntos cada 10 minutos
+            for i in range(144):
+                point_time = now - timedelta(minutes=i * 10)
+                time_points.append(point_time)
+        
+        # Invertir para que vaya de más antiguo a más reciente
+        time_points.reverse()
+        
+        # Debug: información sobre timeline
+        print(f"Generando timeline fijo de {len(time_points)} puntos para período {period}")
+        
+        # Procesar cada punto temporal fijo
+        for point_time in time_points:
+            point_time_local = timezone.localtime(point_time)
+            
+            # Formatear etiqueta según el período
             if period == '12h' or period == '24h':
-                label = created_at_local.strftime('%H:%M')
+                label = point_time_local.strftime('%H:%M')
             elif period == '7d':
-                label = created_at_local.strftime('%d/%m %H:%M')
+                label = point_time_local.strftime('%d/%m %H:%M')
             else:
-                label = created_at_local.strftime('%H:%M')
+                label = point_time_local.strftime('%H:%M')
                 
             sensor_data['labels'].append(label)
-            sensor_data['temperature'].append(reading['temperature'])
-            sensor_data['humidity'].append(reading['humidity'] or 0)
             
-            # Encontrar el estado de calefacción más cercano en tiempo (optimizado)
+            # Buscar el dato de sensor más cercano a este punto temporal
+            closest_sensor = None
+            min_diff = float('inf')
+            
+            for sensor_time, sensor_reading in sensors_by_time.items():
+                diff = abs((point_time - sensor_time).total_seconds())
+                if diff < min_diff and diff < 1800:  # Máximo 30 minutos de tolerancia
+                    min_diff = diff
+                    closest_sensor = sensor_reading
+            
+            # Agregar datos de sensor (o None si no hay datos cercanos)
+            if closest_sensor:
+                sensor_data['temperature'].append(closest_sensor['temperature'])
+                sensor_data['humidity'].append(closest_sensor['humidity'] or 0)
+            else:
+                # Interpolar o usar último valor conocido, o None
+                sensor_data['temperature'].append(None)
+                sensor_data['humidity'].append(None)
+            
+            # Buscar estado de calefacción más cercano
             closest_heating = None
             if heating_status_by_time:
-                # Buscar el log de calefacción más cercano de manera eficiente
                 closest_time = min(heating_status_by_time.keys(), 
-                                 key=lambda x: abs((created_at - x).total_seconds()),
+                                 key=lambda x: abs((point_time - x).total_seconds()),
                                  default=None)
                 
                 if closest_time:
-                    diff = abs((created_at - closest_time).total_seconds())
-                    if diff < 600:  # 10 minutos de tolerancia
+                    diff = abs((point_time - closest_time).total_seconds())
+                    if diff < 1800:  # 30 minutos de tolerancia
                         closest_heating = heating_status_by_time[closest_time]
             
-            # Agregar valor para fondo de calefacción (30 si está encendida, 0 si no)
+            # Agregar valor para fondo de calefacción
             sensor_data['heating_background'].append(30 if closest_heating else 0)
         
         # Si no hay datos de sensores, crear datos de ejemplo
