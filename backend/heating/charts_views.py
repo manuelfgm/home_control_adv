@@ -948,16 +948,16 @@ def charts_data_api(request):
             
             for sensor_time, sensor_reading in sensors_by_time.items():
                 diff = abs((point_time - sensor_time).total_seconds())
-                if diff < min_diff and diff < 1800:  # Máximo 30 minutos de tolerancia
+                if diff < min_diff and diff < 3600:  # Máximo 1 hora de tolerancia
                     min_diff = diff
                     closest_sensor = sensor_reading
             
-            # Agregar datos de sensor (o None si no hay datos cercanos)
+            # Agregar datos de sensor (usar null para JSON válido)
             if closest_sensor:
                 sensor_data['temperature'].append(closest_sensor['temperature'])
                 sensor_data['humidity'].append(closest_sensor['humidity'] or 0)
             else:
-                # Interpolar o usar último valor conocido, o None
+                # Usar null para JSON válido (Chart.js maneja null correctamente)
                 sensor_data['temperature'].append(None)
                 sensor_data['humidity'].append(None)
             
@@ -970,31 +970,23 @@ def charts_data_api(request):
                 
                 if closest_time:
                     diff = abs((point_time - closest_time).total_seconds())
-                    if diff < 1800:  # 30 minutos de tolerancia
+                    if diff < 3600:  # 1 hora de tolerancia
                         closest_heating = heating_status_by_time[closest_time]
             
             # Agregar valor para fondo de calefacción
             sensor_data['heating_background'].append(30 if closest_heating else 0)
+
+        # Debug: verificar datos generados
+        non_null_temps = [t for t in sensor_data['temperature'] if t is not None]
+        print(f"[DEBUG] Generados {len(sensor_data['labels'])} puntos temporales, {len(non_null_temps)} con datos de temperatura")
         
-        # Si no hay datos de sensores, crear datos de ejemplo
-        if sensor_count == 0:
-            # Generar algunas muestras de ejemplo
-            for i in range(10):
-                if period == '12h':
-                    time_offset = timedelta(hours=i * 12 / 10)
-                elif period == '24h':
-                    time_offset = timedelta(hours=i * 24 / 10)
-                elif period == '7d':
-                    time_offset = timedelta(hours=i * 24*7 / 10)
-                else:
-                    time_offset = timedelta(hours=i * 24 / 10)
-                    
-                sample_time = start_time + time_offset
-                sample_time_local = timezone.localtime(sample_time)
-                sensor_data['labels'].append(sample_time_local.strftime('%H:%M' if period in ['12h', '24h'] else '%d/%m %H:%M'))
-                sensor_data['temperature'].append(20 + i * 0.5)
-                sensor_data['humidity'].append(50 + i * 2)
-                sensor_data['heating_background'].append(30 if i % 3 == 0 else 0)  # Ejemplo
+        # Si no hay datos reales, generar algunos datos de ejemplo para mostrar la gráfica
+        if len(non_null_temps) == 0:
+            print("[DEBUG] No hay datos reales, generando datos de ejemplo")
+            # Reemplazar algunos valores None con datos de ejemplo
+            for i in range(0, len(sensor_data['temperature']), max(1, len(sensor_data['temperature']) // 10)):
+                sensor_data['temperature'][i] = 20.0 + (i % 5) * 0.5
+                sensor_data['humidity'][i] = 50.0 + (i % 3) * 5
         
         # Calcular uso diario de calefacción (últimos 30 días) - OPTIMIZADO
         daily_data = {
@@ -1102,8 +1094,12 @@ def charts_data_api(request):
             'period': period,
             'debug_info': {
                 'processing_time': processing_time,
-                'sensor_points': len(sampled_sensors),
-                'total_sensor_records': sensor_count
+                'total_sensor_records': sensor_count,
+                'generated_timeline_points': len(sensor_data['labels']),
+                'non_null_temperatures': len([t for t in sensor_data['temperature'] if t is not None]),
+                'non_null_humidity': len([h for h in sensor_data['humidity'] if h is not None]),
+                'heating_logs_count': len(heating_list),
+                'period_requested': period
             }
         })
         
