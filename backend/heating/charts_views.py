@@ -9,6 +9,7 @@ import calendar
 import time
 
 from sensors.models import SensorReading
+from actuators.models import ActuatorStatus
 from .models import HeatingLog
 
 
@@ -866,10 +867,10 @@ def charts_data_api(request):
             temperature__isnull=False
         ).order_by('created_at')
         
-        # Obtener datos de calefacción con muestreo optimizado
-        heating_logs = HeatingLog.objects.filter(
-            timestamp__gte=start_time
-        ).order_by('timestamp')
+        # Obtener datos de calefacción desde ActuatorStatus (datos reales del actuador por MQTT)
+        heating_logs = ActuatorStatus.objects.filter(
+            created_at__gte=start_time
+        ).order_by('created_at')
         
         # Procesar datos de sensores con muestreo inteligente
         sensor_data = {
@@ -881,7 +882,8 @@ def charts_data_api(request):
         
         # Convertir a lista para procesamiento más eficiente
         sensor_list = list(sensor_readings.values('created_at', 'temperature', 'humidity'))
-        heating_list = list(heating_logs.values('timestamp', 'is_heating'))
+        # Usar 'created_at' para ActuatorStatus en lugar de 'timestamp'
+        heating_list = list(heating_logs.values('created_at', 'is_heating'))
         
         # Debug: añadir información sobre los datos encontrados
         sensor_count = len(sensor_list)
@@ -889,7 +891,7 @@ def charts_data_api(request):
         # Crear un diccionario de estado de calefacción por tiempo para búsqueda rápida
         heating_status_by_time = {}
         for log in heating_list:
-            heating_status_by_time[log['timestamp']] = log['is_heating']
+            heating_status_by_time[log['created_at']] = log['is_heating']
         
         # Generar timeline fijo para mostrar siempre las últimas 24h/12h completas
         now_local = timezone.localtime(now)
@@ -999,16 +1001,16 @@ def charts_data_api(request):
         thirty_days_ago = now_local.date() - timedelta(days=30)
         thirty_days_start = timezone.make_aware(datetime.combine(thirty_days_ago, datetime.min.time()))
         
-        # Una sola consulta para todos los logs de 30 días
-        all_daily_logs = list(HeatingLog.objects.filter(
-            timestamp__gte=thirty_days_start
-        ).values('timestamp', 'is_heating').order_by('timestamp'))
+        # Una sola consulta para todos los logs de 30 días desde ActuatorStatus
+        all_daily_logs = list(ActuatorStatus.objects.filter(
+            created_at__gte=thirty_days_start
+        ).values('created_at', 'is_heating').order_by('created_at'))
         
         # Agrupar logs por día para procesamiento eficiente - USAR HORA LOCAL
         logs_by_day = {}
         for log in all_daily_logs:
-            # Convertir timestamp UTC a hora local antes de obtener la fecha
-            local_timestamp = timezone.localtime(log['timestamp'])
+            # Convertir created_at UTC a hora local antes de obtener la fecha
+            local_timestamp = timezone.localtime(log['created_at'])
             day_key = local_timestamp.date()
             if day_key not in logs_by_day:
                 logs_by_day[day_key] = []
@@ -1058,11 +1060,11 @@ def charts_data_api(request):
             else:
                 next_month = month_date.replace(month=month_date.month + 1, day=1)
             
-            # Obtener todos los logs del mes ordenados por timestamp
-            month_logs = HeatingLog.objects.filter(
-                timestamp__gte=month_start,
-                timestamp__lt=next_month
-            ).order_by('timestamp')
+            # Obtener todos los logs del mes desde ActuatorStatus
+            month_logs = ActuatorStatus.objects.filter(
+                created_at__gte=month_start,
+                created_at__lt=next_month
+            ).order_by('created_at')
             
             # Calcular tiempo real de uso basado en períodos ON/OFF
             real_hours = calculate_real_heating_time(month_logs)
@@ -1111,6 +1113,7 @@ def charts_data_api(request):
 def calculate_heating_time_from_dict_list(logs_dict_list):
     """
     Versión optimizada que calcula tiempo directamente desde lista de diccionarios
+    Adaptado para trabajar con ActuatorStatus (usa 'created_at' en lugar de 'timestamp')
     """
     if not logs_dict_list:
         return 0.0
@@ -1119,12 +1122,15 @@ def calculate_heating_time_from_dict_list(logs_dict_list):
     heating_start = None
     
     for log in logs_dict_list:
+        # Usar 'created_at' si existe, sino 'timestamp' para retrocompatibilidad
+        log_time = log.get('created_at') or log.get('timestamp')
+        
         if log['is_heating'] and heating_start is None:
             # Comienza un período de calefacción
-            heating_start = log['timestamp']
+            heating_start = log_time
         elif not log['is_heating'] and heating_start is not None:
             # Termina un período de calefacción
-            heating_end = log['timestamp']
+            heating_end = log_time
             period_seconds = (heating_end - heating_start).total_seconds()
             total_seconds += period_seconds
             heating_start = None
@@ -1132,7 +1138,7 @@ def calculate_heating_time_from_dict_list(logs_dict_list):
     # Si la calefacción seguía encendida al final del período
     if heating_start is not None and logs_dict_list:
         # Asumir que sigue encendida hasta el último log
-        last_log_time = logs_dict_list[-1]['timestamp']
+        last_log_time = logs_dict_list[-1].get('created_at') or logs_dict_list[-1].get('timestamp')
         period_seconds = (last_log_time - heating_start).total_seconds()
         total_seconds += period_seconds
     
@@ -1142,8 +1148,13 @@ def calculate_real_heating_time(logs_queryset):
     """
     Calcula el tiempo real que la calefacción estuvo encendida
     basándose en los períodos entre logs de ON y OFF
+    Adaptado para trabajar con ActuatorStatus (usa 'created_at' en lugar de 'timestamp')
     """
-    logs = list(logs_queryset.values('timestamp', 'is_heating').order_by('timestamp'))
+    # Detectar si es ActuatorStatus o HeatingLog
+    model_name = logs_queryset.model.__name__ if hasattr(logs_queryset, 'model') else None
+    time_field = 'created_at' if model_name == 'ActuatorStatus' else 'timestamp'
+    
+    logs = list(logs_queryset.values(time_field, 'is_heating').order_by(time_field))
     
     if not logs:
         return 0.0
@@ -1152,12 +1163,14 @@ def calculate_real_heating_time(logs_queryset):
     heating_start = None
     
     for log in logs:
+        log_time = log[time_field]
+        
         if log['is_heating'] and heating_start is None:
             # Comienza un período de calefacción
-            heating_start = log['timestamp']
+            heating_start = log_time
         elif not log['is_heating'] and heating_start is not None:
             # Termina un período de calefacción
-            heating_end = log['timestamp']
+            heating_end = log_time
             period_seconds = (heating_end - heating_start).total_seconds()
             total_seconds += period_seconds
             heating_start = None
@@ -1165,7 +1178,7 @@ def calculate_real_heating_time(logs_queryset):
     # Si la calefacción seguía encendida al final del período
     if heating_start is not None and logs:
         # Asumir que sigue encendida hasta el último log
-        last_log_time = logs[-1]['timestamp']
+        last_log_time = logs[-1][time_field]
         period_seconds = (last_log_time - heating_start).total_seconds()
         total_seconds += period_seconds
     
