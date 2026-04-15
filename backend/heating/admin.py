@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import HeatingSettings, HeatingSchedule, HeatingLog
+from .models import HeatingSettings, HeatingSchedule, HeatingLog, HeatingDailyUsage, HeatingMonthlyUsage
 
 
 @admin.register(HeatingSettings)
@@ -77,3 +77,18 @@ class HeatingLogAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+@admin.register(HeatingDailyUsage)
+class HeatingDailyUsageAdmin(admin.ModelAdmin):
+    list_display = ['date', 'total_hours', 'last_updated']
+    ordering = ['-date']
+    readonly_fields = ['last_updated']
+    date_hierarchy = 'date'
+
+
+@admin.register(HeatingMonthlyUsage)
+class HeatingMonthlyUsageAdmin(admin.ModelAdmin):
+    list_display = ['year', 'month', 'total_hours', 'last_updated']
+    ordering = ['-year', '-month']
+    readonly_fields = ['last_updated']

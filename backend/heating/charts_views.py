@@ -8,7 +8,7 @@ import time
 
 from sensors.models import SensorReading
 from actuators.models import ActuatorStatus
-from .models import HeatingLog
+from .models import HeatingLog, HeatingDailyUsage, HeatingMonthlyUsage
 
 
 @login_required
@@ -183,85 +183,52 @@ def charts_data_api(request):
                 sensor_data['temperature'][i] = 20.0 + (i % 5) * 0.5
                 sensor_data['humidity'][i] = 50.0 + (i % 3) * 5
         
-        # Calcular uso diario de calefacción (últimos 30 días) - OPTIMIZADO
+        # Uso diario — una sola consulta a la tabla pre-calculada
         daily_data = {
             'labels': [],
             'hours': []
         }
-        
-        # Calcular uso diario con hora local
-        now_local = timezone.localtime(now)
-        thirty_days_ago = now_local.date() - timedelta(days=30)
-        thirty_days_start = timezone.make_aware(datetime.combine(thirty_days_ago, datetime.min.time()))
-        
-        # Una sola consulta para todos los logs de 30 días desde ActuatorStatus
-        all_daily_logs = list(ActuatorStatus.objects.filter(
-            created_at__gte=thirty_days_start
-        ).values('created_at', 'is_heating').order_by('created_at'))
-        
-        # Agrupar logs por día para procesamiento eficiente - USAR HORA LOCAL
-        logs_by_day = {}
-        for log in all_daily_logs:
-            # Convertir created_at UTC a hora local antes de obtener la fecha
-            local_timestamp = timezone.localtime(log['created_at'])
-            day_key = local_timestamp.date()
-            if day_key not in logs_by_day:
-                logs_by_day[day_key] = []
-            logs_by_day[day_key].append(log)
-        
-        # Procesar cada día
-        for i in range(30):
-            day_date = now_local.date() - timedelta(days=i)
-            day_label = day_date.strftime('%d/%m')  # Formato: 18/11
-            
-            # Generar etiqueta del día
-            daily_data['labels'].insert(0, day_label)
-            
-            # Calcular uso del día usando los logs agrupados
-            day_logs_dict = logs_by_day.get(day_date, [])
-            if day_logs_dict:
-                # Calcular horas directamente desde la lista de diccionarios
-                real_hours = calculate_heating_time_from_dict_list(day_logs_dict)
-            else:
-                real_hours = 0.0
-                
-            daily_data['hours'].insert(0, round(real_hours, 1))
 
-        # Calcular uso mensual de calefacción (últimos 12 meses)
-        # Simplificado para evitar problemas de compatibilidad con bases de datos
-        
+        now_local = timezone.localtime(now)
+        thirty_days_ago = now_local.date() - timedelta(days=29)
+
+        daily_usage_map = {
+            u.date: u.total_hours
+            for u in HeatingDailyUsage.objects.filter(date__gte=thirty_days_ago)
+        }
+
+        for i in range(29, -1, -1):
+            day_date = now_local.date() - timedelta(days=i)
+            daily_data['labels'].append(day_date.strftime('%d/%m'))
+            daily_data['hours'].append(round(daily_usage_map.get(day_date, 0.0), 1))
+
+        # Uso mensual — una sola consulta a la tabla pre-calculada
         monthly_data = {
             'labels': [],
             'hours': []
         }
-        
-        # Generar datos reales para los últimos 12 meses
-        current_date = now.replace(day=1)  # Primer día del mes actual
-        
-        for i in range(12):
-            month_date = current_date - timedelta(days=30*i)
-            month_name = calendar.month_name[month_date.month][:3]  # Nov, Oct, etc.
-            year = month_date.year
-            
-            # Generar etiqueta del mes
-            monthly_data['labels'].insert(0, f"{month_name} {year}")
-            
-            # Calcular uso real del mes basado en períodos de calefacción activa
-            month_start = month_date.replace(day=1)
-            if month_date.month == 12:
-                next_month = month_date.replace(year=month_date.year + 1, month=1, day=1)
-            else:
-                next_month = month_date.replace(month=month_date.month + 1, day=1)
-            
-            # Obtener todos los logs del mes desde ActuatorStatus
-            month_logs = ActuatorStatus.objects.filter(
-                created_at__gte=month_start,
-                created_at__lt=next_month
-            ).order_by('created_at')
-            
-            # Calcular tiempo real de uso basado en períodos ON/OFF
-            real_hours = calculate_real_heating_time(month_logs)
-            monthly_data['hours'].insert(0, round(real_hours, 1))
+
+        # Calcular los 12 pares (año, mes) en orden ascendente
+        y, m = now_local.year, now_local.month
+        months_needed = []
+        for _ in range(12):
+            months_needed.append((y, m))
+            m -= 1
+            if m == 0:
+                m = 12
+                y -= 1
+        months_needed.reverse()  # de más antiguo a más reciente
+
+        years_needed = list({yr for yr, _ in months_needed})
+        monthly_usage_map = {
+            (u.year, u.month): u.total_hours
+            for u in HeatingMonthlyUsage.objects.filter(year__in=years_needed)
+        }
+
+        for yr, mo in months_needed:
+            month_name = calendar.month_name[mo][:3]
+            monthly_data['labels'].append(f"{month_name} {yr}")
+            monthly_data['hours'].append(round(monthly_usage_map.get((yr, mo), 0.0), 1))
         
         # Obtener estadísticas actuales (optimizado)
         current_sensor = SensorReading.objects.filter(

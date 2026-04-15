@@ -614,3 +614,98 @@ class HeatingController:
                 'action': 'turn_off',
                 'actuator_id': 'boiler'
             }
+
+
+# ---------------------------------------------------------------------------
+# Pre-calculated usage models
+# ---------------------------------------------------------------------------
+
+class HeatingDailyUsage(models.Model):
+    """
+    Uso diario de calefacción pre-calculado.
+    Se actualiza incrementalmente con cada nuevo ActuatorStatus recibido.
+    """
+    date = models.DateField(unique=True, help_text="Fecha del día")
+    total_hours = models.FloatField(default=0.0, help_text="Horas totales de calefacción encendida ese día")
+    last_updated = models.DateTimeField(auto_now=True, help_text="Última actualización del registro")
+
+    class Meta:
+        verbose_name = "Uso Diario de Calefacción"
+        verbose_name_plural = "Usos Diarios de Calefacción"
+        ordering = ['-date']
+        indexes = [models.Index(fields=['-date'])]
+
+    def __str__(self):
+        return f"{self.date} — {self.total_hours:.2f} h"
+
+
+class HeatingMonthlyUsage(models.Model):
+    """
+    Uso mensual de calefacción pre-calculado.
+    Se actualiza incrementalmente con cada nuevo ActuatorStatus recibido.
+    """
+    year = models.IntegerField(help_text="Año")
+    month = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(12)],
+        help_text="Mes (1-12)"
+    )
+    total_hours = models.FloatField(default=0.0, help_text="Horas totales de calefacción encendida ese mes")
+    last_updated = models.DateTimeField(auto_now=True, help_text="Última actualización del registro")
+
+    class Meta:
+        verbose_name = "Uso Mensual de Calefacción"
+        verbose_name_plural = "Usos Mensuales de Calefacción"
+        unique_together = ('year', 'month')
+        ordering = ['-year', '-month']
+
+    def __str__(self):
+        return f"{self.year}-{self.month:02d} — {self.total_hours:.2f} h"
+
+
+def record_heating_period(start_utc, end_utc):
+    """
+    Registra un período de calefacción activa en HeatingDailyUsage y
+    HeatingMonthlyUsage.  Maneja correctamente períodos que cruzan la
+    medianoche distribuyendo el tiempo entre los días afectados.
+
+    Args:
+        start_utc: datetime con timezone en UTC del inicio del período.
+        end_utc:   datetime con timezone en UTC del fin del período.
+    """
+    if end_utc <= start_utc:
+        return
+
+    start_local = timezone.localtime(start_utc)
+    end_local = timezone.localtime(end_utc)
+
+    current = start_local
+    while current.date() <= end_local.date():
+        if current.date() == end_local.date():
+            period_end = end_local
+        else:
+            # Avanzar hasta medianoche del día siguiente
+            next_midnight = datetime.datetime.combine(
+                current.date() + datetime.timedelta(days=1),
+                datetime.time.min,
+            )
+            period_end = timezone.localtime(timezone.make_aware(next_midnight))
+
+        hours = (period_end - current).total_seconds() / 3600.0
+
+        if hours > 0:
+            day = current.date()
+
+            # Asegurar que existe el registro y sumar horas de forma atómica
+            HeatingDailyUsage.objects.get_or_create(date=day, defaults={'total_hours': 0.0})
+            HeatingDailyUsage.objects.filter(date=day).update(
+                total_hours=models.F('total_hours') + hours
+            )
+
+            HeatingMonthlyUsage.objects.get_or_create(
+                year=day.year, month=day.month, defaults={'total_hours': 0.0}
+            )
+            HeatingMonthlyUsage.objects.filter(year=day.year, month=day.month).update(
+                total_hours=models.F('total_hours') + hours
+            )
+
+        current = period_end  # ya es medianoche del día siguiente o el fin real
