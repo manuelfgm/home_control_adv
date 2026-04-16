@@ -75,16 +75,20 @@ class Command(BaseCommand):
         local_tz = timezone.get_current_timezone()
         t0_load = time.time()
 
-        statuses = [
-            (s['created_at'].astimezone(local_tz), s['is_heating'])
-            for s in ActuatorStatus.objects
+        statuses = []
+        for s in (
+            ActuatorStatus.objects
             .order_by('created_at')
             .values('created_at', 'is_heating')
             .iterator(chunk_size=5_000)
-        ]
+        ):
+            statuses.append((s['created_at'].astimezone(local_tz), s['is_heating']))
+            n = len(statuses)
+            if n % 50_000 == 0:
+                self.stdout.write(f'  {n:,}/{total:,} registros cargados...')
 
         load_secs = time.time() - t0_load
-        self.stdout.write(f'  Cargados en {load_secs:.1f}s')
+        self.stdout.write(f'  {len(statuses):,} registros cargados en {load_secs:.1f}s')
 
         # --- Bucle de cálculo con progreso ---
         self.stdout.write(f'Calculando períodos ({total - 1:,} pares)...')
