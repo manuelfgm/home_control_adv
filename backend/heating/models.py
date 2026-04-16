@@ -679,33 +679,24 @@ def record_heating_period(start_utc, end_utc):
     end_local = timezone.localtime(end_utc)
 
     current = start_local
-    while current.date() <= end_local.date():
-        if current.date() == end_local.date():
-            period_end = end_local
-        else:
-            # Avanzar hasta medianoche del día siguiente
-            next_midnight = datetime.datetime.combine(
-                current.date() + datetime.timedelta(days=1),
-                datetime.time.min,
-            )
-            period_end = timezone.localtime(timezone.make_aware(next_midnight))
 
-        hours = (period_end - current).total_seconds() / 3600.0
-
+    # Avanzar día a día hasta el último día del período (exclusive)
+    while current.date() < end_local.date():
+        midnight = current.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+        hours = (midnight - current).total_seconds() / 3600.0
         if hours > 0:
             day = current.date()
-
-            # Asegurar que existe el registro y sumar horas de forma atómica
             HeatingDailyUsage.objects.get_or_create(date=day, defaults={'total_hours': 0.0})
-            HeatingDailyUsage.objects.filter(date=day).update(
-                total_hours=models.F('total_hours') + hours
-            )
+            HeatingDailyUsage.objects.filter(date=day).update(total_hours=models.F('total_hours') + hours)
+            HeatingMonthlyUsage.objects.get_or_create(year=day.year, month=day.month, defaults={'total_hours': 0.0})
+            HeatingMonthlyUsage.objects.filter(year=day.year, month=day.month).update(total_hours=models.F('total_hours') + hours)
+        current = midnight
 
-            HeatingMonthlyUsage.objects.get_or_create(
-                year=day.year, month=day.month, defaults={'total_hours': 0.0}
-            )
-            HeatingMonthlyUsage.objects.filter(year=day.year, month=day.month).update(
-                total_hours=models.F('total_hours') + hours
-            )
-
-        current = period_end  # ya es medianoche del día siguiente o el fin real
+    # Fracción del último día (o único día si start y end son el mismo día)
+    hours = (end_local - current).total_seconds() / 3600.0
+    if hours > 0:
+        day = current.date()
+        HeatingDailyUsage.objects.get_or_create(date=day, defaults={'total_hours': 0.0})
+        HeatingDailyUsage.objects.filter(date=day).update(total_hours=models.F('total_hours') + hours)
+        HeatingMonthlyUsage.objects.get_or_create(year=day.year, month=day.month, defaults={'total_hours': 0.0})
+        HeatingMonthlyUsage.objects.filter(year=day.year, month=day.month).update(total_hours=models.F('total_hours') + hours)

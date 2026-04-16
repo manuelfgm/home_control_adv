@@ -21,22 +21,23 @@ def _accumulate_period(daily_totals, monthly_totals, start_local, end_local):
     if end_local <= start_local:
         return
 
+    # Avanzar día a día hasta el último día del período (exclusive)
     current = start_local
-    while current.date() <= end_local.date():
-        if current.date() == end_local.date():
-            period_end = end_local
-        else:
-            period_end = current.replace(
-                hour=0, minute=0, second=0, microsecond=0
-            ) + datetime.timedelta(days=1)
-
-        hours = (period_end - current).total_seconds() / 3600.0
+    while current.date() < end_local.date():
+        midnight = current.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+        hours = (midnight - current).total_seconds() / 3600.0
         if hours > 0:
             day = current.date()
             daily_totals[day] += hours
             monthly_totals[(day.year, day.month)] += hours
+        current = midnight
 
-        current = period_end
+    # Fracción del último día (o único día si start y end son el mismo día)
+    hours = (end_local - current).total_seconds() / 3600.0
+    if hours > 0:
+        day = current.date()
+        daily_totals[day] += hours
+        monthly_totals[(day.year, day.month)] += hours
 
 
 class Command(BaseCommand):
@@ -86,12 +87,15 @@ class Command(BaseCommand):
             n = len(statuses)
             if n % 50_000 == 0:
                 self.stdout.write(f'  {n:,}/{total:,} registros cargados...')
+                self.stdout.flush()
 
         load_secs = time.time() - t0_load
         self.stdout.write(f'  {len(statuses):,} registros cargados en {load_secs:.1f}s')
+        self.stdout.flush()
 
         # --- Bucle de cálculo con progreso ---
         self.stdout.write(f'Calculando períodos ({total - 1:,} pares)...')
+        self.stdout.flush()
         daily_totals = defaultdict(float)
         monthly_totals = defaultdict(float)
 
@@ -116,6 +120,7 @@ class Command(BaseCommand):
                     f'{elapsed:.0f}s transcurridos  '
                     f'ETA: {eta:.0f}s'
                 )
+                self.stdout.flush()
 
         calc_secs = time.time() - t0_calc
         self.stdout.write(
