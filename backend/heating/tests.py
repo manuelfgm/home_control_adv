@@ -64,6 +64,19 @@ class TelegramHeatingBotTests(TestCase):
 		post.assert_not_called()
 
 	@patch('heating.telegram_bot.requests.post')
+	def test_help_command_lists_each_command_on_its_own_line(self, post):
+		post.return_value.json.return_value = {'ok': True}
+
+		self.update('/ayuda')
+
+		self.assertEqual(
+			post.call_args.kwargs['json']['text'],
+			'Comandos disponibles:\n'
+			'/estado - consultar el estado de la calefaccion\n'
+			'/programas - gestionar horarios',
+		)
+
+	@patch('heating.telegram_bot.requests.post')
 	def test_status_command_returns_sensor_and_active_program(self, post):
 		post.return_value.json.return_value = {'ok': True}
 		reading = type('Reading', (), {'temperature': 19.5, 'humidity': 48.2})()

@@ -80,7 +80,9 @@ class TelegramHeatingBot:
         elif command == '/ayuda':
             self._send_message(
                 chat['id'],
-                'Usa /estado para ver la calefaccion y /programas para gestionar horarios.',
+                'Comandos disponibles:\n'
+                '/estado - consultar el estado de la calefaccion\n'
+                '/programas - gestionar horarios',
             )
         elif command == '/estado':
             self._send_current_status(chat['id'])
