@@ -47,6 +47,42 @@ python manage.py createsuperuser  # Crear usuario admin
 ./manage_service.sh install
 ```
 
+## Avisos de Telegram
+
+Los cambios de estado recibidos del actuador en `/actuators/api/status/`
+envían un aviso mediante la [API oficial de Telegram](https://core.telegram.org/bots/api#sendmessage).
+Se compara `is_heating` con el último estado del mismo `actuator_id`:
+el primer registro y los estados repetidos no envían mensajes. El aviso incluye
+el encendido o apagado, el identificador del actuador y la fecha de recepción local.
+Los comandos enviados a la caldera no generan avisos hasta recibir su estado.
+
+1. Crea un bot con `@BotFather` usando `/newbot` y guarda su token en el archivo `.env` local, nunca en Git.
+2. Cada destinatario debe abrir una conversación con el bot y pulsar Iniciar o enviar `/start`. Para grupos, añade el bot al grupo y envía un comando dirigido al bot.
+3. Consulta el método `getUpdates` de la API oficial en tu entorno privado y obtiene `message.chat.id` de los mensajes recibidos. No compartas el token ni la respuesta completa.
+4. Configura estas variables en `.env` con el token y los IDs autorizados:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=tu_token_de_botfather
+TELEGRAM_CHAT_ID_WHITELIST=123456789,-1001234567890
+```
+
+Reinicia el backend para cargar los cambios. Solo reciben avisos los chats de la
+whitelist; no se añaden destinatarios automáticamente ni se aceptan órdenes por Telegram.
+Si el token o la lista están vacíos, los avisos quedan desactivados.
+
+El envío se ejecuta después de confirmar la transacción de base de datos, con
+timeout de conexión de 3 segundos y de lectura de 5 segundos por destinatario.
+Si Telegram falla, el estado sigue guardado y se registra un aviso sin incluir el
+token. No hay cola persistente ni reintentos automáticos: los avisos fallidos no
+se recuperan. El endpoint de estados debe ser accesible únicamente desde tu red
+de confianza, pues actualmente permite peticiones sin autenticación.
+
+Pruebas sin enviar mensajes reales:
+
+```bash
+.venv/bin/python backend/manage.py test actuators
+```
+
 ## 🎯 Comandos de Producción
 
 ### **Gestión Principal del Servicio**

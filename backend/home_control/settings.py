@@ -183,6 +183,13 @@ MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
 MQTT_USERNAME = os.getenv('MQTT_USERNAME', '')
 MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', '')
 
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
+TELEGRAM_CHAT_ID_WHITELIST = [
+    chat_id.strip()
+    for chat_id in os.getenv('TELEGRAM_CHAT_ID_WHITELIST', '').split(',')
+    if chat_id.strip()
+]
+
 # Logging configuration
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 

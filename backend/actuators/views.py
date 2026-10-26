@@ -2,7 +2,9 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
+from django.db import transaction
 from .models import ActuatorStatus
+from .notifications import notify_heating_change
 from .serializers import ActuatorStatusSerializer
 
 
@@ -27,8 +29,16 @@ class ActuatorStatusViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Crear solo el estado del actuador
-        actuator_status = serializer.save()
+        with transaction.atomic():
+            previous_status = ActuatorStatus.objects.filter(
+                actuator_id=serializer.validated_data['actuator_id']
+            ).order_by('-created_at', '-pk').first()
+            actuator_status = serializer.save()
+            if (
+                previous_status is not None
+                and previous_status.is_heating != actuator_status.is_heating
+            ):
+                transaction.on_commit(lambda: notify_heating_change(actuator_status))
         
         headers = self.get_success_headers(serializer.data)
         return Response(
