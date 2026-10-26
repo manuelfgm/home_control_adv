@@ -75,17 +75,20 @@ class TelegramHeatingBot:
 
         text = message.get('text', '').strip()
         command = text.split(maxsplit=1)[0].split('@', 1)[0].lower() if text else ''
-        if command in ('/start', '/programas'):
+        if command == '/programas':
             self._send_program_list(chat['id'])
-        elif command == '/ayuda':
-            self._send_message(
-                chat['id'],
-                'Comandos disponibles:\n'
-                '/estado - consultar el estado de la calefaccion\n'
-                '/programas - gestionar horarios',
-            )
         elif command == '/estado':
             self._send_current_status(chat['id'])
+        else:
+            self._send_help(chat['id'])
+
+    def _send_help(self, chat_id):
+        self._send_message(
+            chat_id,
+            'Comandos disponibles:\n'
+            '/estado - consultar el estado de la calefaccion\n'
+            '/programas - gestionar horarios',
+        )
 
     def _send_current_status(self, chat_id):
         reading = SensorReading.objects.filter(
