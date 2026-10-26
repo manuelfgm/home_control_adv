@@ -57,18 +57,43 @@ el encendido o apagado, el identificador del actuador y la fecha de recepción l
 Los comandos enviados a la caldera no generan avisos hasta recibir su estado.
 
 1. Crea un bot con `@BotFather` usando `/newbot` y guarda su token en el archivo `.env` local, nunca en Git.
-2. Cada destinatario debe abrir una conversación con el bot y pulsar Iniciar o enviar `/start`. Para grupos, añade el bot al grupo y envía un comando dirigido al bot.
-3. Consulta el método `getUpdates` de la API oficial en tu entorno privado y obtiene `message.chat.id` de los mensajes recibidos. No compartas el token ni la respuesta completa.
-4. Configura estas variables en `.env` con el token y los IDs autorizados:
+2. Cada usuario que vaya a controlar la calefacción debe abrir una conversación privada con el bot y enviar `/start`. Los grupos pueden recibir avisos, pero no se permiten comandos de control en ellos.
+3. Con el bot de polling detenido, consulta `getUpdates` en un entorno privado y obtén `message.chat.id` de cada conversación privada autorizada. No compartas el token ni la respuesta completa.
+4. Configura estas variables en `.env`:
 
 ```dotenv
 TELEGRAM_BOT_TOKEN=tu_token_de_botfather
 TELEGRAM_CHAT_ID_WHITELIST=123456789,-1001234567890
 ```
 
-Reinicia el backend para cargar los cambios. Solo reciben avisos los chats de la
-whitelist; no se añaden destinatarios automáticamente ni se aceptan órdenes por Telegram.
-Si el token o la lista están vacíos, los avisos quedan desactivados.
+Los IDs numéricos separados por comas en `TELEGRAM_CHAT_ID_WHITELIST` sirven para
+ambas cosas: los usuarios listados reciben avisos y pueden gestionar programas
+desde el chat privado con el bot; los IDs de grupo reciben avisos, pero no pueden
+controlar horarios. En chats privados, `message.chat.id` coincide con el ID del
+usuario. No son números de móvil. Nunca publiques el token ni la respuesta de
+`getUpdates`.
+
+Una vez iniciado el servicio de abajo, abre el bot y envía `/programas`. Verás
+los horarios registrados y si están activados o desactivados. Selecciona uno para
+ver sus días, franja horaria, temperatura, estado del sistema y último estado
+reportado por la caldera; el botón permite activarlo o desactivarlo. Activar un
+horario solo lo habilita para su franja: no fuerza la caldera a encenderse fuera
+de ella. Los solapamientos con otros horarios activos se rechazan.
+
+El bot interactivo se inicia junto con Gunicorn y el bridge MQTT mediante
+`start_backend.sh`, siempre que `TELEGRAM_BOT_TOKEN` y
+`TELEGRAM_CHAT_ID_WHITELIST` estén configurados. Instala o reinicia el servicio
+principal para aplicar cambios:
+
+```bash
+./manage_service.sh install
+sudo systemctl restart home-control-backend
+sudo journalctl -u home-control-backend -f
+```
+
+Reinicia el servicio tras cambiar el token o la whitelist. Si Telegram no está
+configurado, Gunicorn y MQTT arrancan normalmente y el bot queda omitido. La
+opción `--mqtt-only` también omite Telegram.
 
 El envío se ejecuta después de confirmar la transacción de base de datos, con
 timeout de conexión de 3 segundos y de lectura de 5 segundos por destinatario.

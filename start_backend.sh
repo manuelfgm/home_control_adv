@@ -8,6 +8,7 @@ set -e
 FORCE_RESTART=false
 SKIP_GUNICORN=false
 MQTT_ONLY=false
+START_TELEGRAM=true
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -18,6 +19,7 @@ while [[ $# -gt 0 ]]; do
         --mqtt-only|-m)
             MQTT_ONLY=true
             SKIP_GUNICORN=true
+            START_TELEGRAM=false
             shift
             ;;
         --help|-h)
@@ -73,10 +75,11 @@ echo "� Verificando servicios existentes..."
 # Verificar si ya hay servicios funcionando
 EXISTING_GUNICORN=$(pgrep -f "gunicorn.*home_control" | head -1)
 EXISTING_MQTT=$(pgrep -f "mqtt_bridge.py" | head -1)
+EXISTING_TELEGRAM=$(pgrep -f '[m]anage.py telegram_bot' | head -1)
 PORT_8000_USED=$(netstat -tln 2>/dev/null | grep ":8000 " | wc -l)
 
 # Manejar servicios existentes
-if [ ! -z "$EXISTING_GUNICORN" ] || [ "$PORT_8000_USED" -gt 0 ] || [ ! -z "$EXISTING_MQTT" ]; then
+if [ ! -z "$EXISTING_GUNICORN" ] || [ "$PORT_8000_USED" -gt 0 ] || [ ! -z "$EXISTING_MQTT" ] || [ ! -z "$EXISTING_TELEGRAM" ]; then
     echo "⚠️  Detectados servicios ya funcionando:"
     if [ ! -z "$EXISTING_GUNICORN" ]; then
         echo "   - Gunicorn ya está ejecutándose (PID: $EXISTING_GUNICORN)"
@@ -86,6 +89,9 @@ if [ ! -z "$EXISTING_GUNICORN" ] || [ "$PORT_8000_USED" -gt 0 ] || [ ! -z "$EXIS
     fi
     if [ ! -z "$EXISTING_MQTT" ]; then
         echo "   - MQTT Bridge ya está ejecutándose (PID: $EXISTING_MQTT)"
+    fi
+    if [ ! -z "$EXISTING_TELEGRAM" ]; then
+        echo "   - Bot Telegram ya está ejecutándose (PID: $EXISTING_TELEGRAM)"
     fi
     
     if [ "$FORCE_RESTART" = "true" ]; then
@@ -98,6 +104,10 @@ if [ ! -z "$EXISTING_GUNICORN" ] || [ "$PORT_8000_USED" -gt 0 ] || [ ! -z "$EXIS
             kill $EXISTING_MQTT 2>/dev/null
             echo "   ✅ MQTT Bridge detenido"
         fi
+        if [ ! -z "$EXISTING_TELEGRAM" ]; then
+            kill $EXISTING_TELEGRAM 2>/dev/null
+            echo "   ✅ Bot Telegram detenido"
+        fi
         echo "⏳ Esperando que se liberen los puertos..."
         sleep 3
     elif [ "$MQTT_ONLY" = "true" ]; then
@@ -107,7 +117,13 @@ if [ ! -z "$EXISTING_GUNICORN" ] || [ "$PORT_8000_USED" -gt 0 ] || [ ! -z "$EXIS
             echo "   ✅ MQTT Bridge anterior detenido"
             sleep 2
         fi
+        if [ ! -z "$EXISTING_TELEGRAM" ]; then
+            kill $EXISTING_TELEGRAM 2>/dev/null
+            echo "   ✅ Bot Telegram anterior detenido"
+            sleep 2
+        fi
         SKIP_GUNICORN=true
+        START_TELEGRAM=false
     else
         echo ""
         echo "🤔 ¿Qué quieres hacer?"
@@ -128,6 +144,10 @@ if [ ! -z "$EXISTING_GUNICORN" ] || [ "$PORT_8000_USED" -gt 0 ] || [ ! -z "$EXIS
                     kill $EXISTING_MQTT 2>/dev/null
                     echo "   ✅ MQTT Bridge detenido"
                 fi
+                if [ ! -z "$EXISTING_TELEGRAM" ]; then
+                    kill $EXISTING_TELEGRAM 2>/dev/null
+                    echo "   ✅ Bot Telegram detenido"
+                fi
                 echo "⏳ Esperando que se liberen los puertos..."
                 sleep 3
                 ;;
@@ -143,6 +163,7 @@ if [ ! -z "$EXISTING_GUNICORN" ] || [ "$PORT_8000_USED" -gt 0 ] || [ ! -z "$EXIS
                     sleep 2
                 fi
                 SKIP_GUNICORN=true
+                START_TELEGRAM=false
                 ;;
             *)
                 echo "❌ Opción inválida, saliendo..."
@@ -158,16 +179,21 @@ echo "🚀 Iniciando servicios..."
 cleanup() {
     echo "🛑 Deteniendo servicios..."
     if [ ! -z "$GUNICORN_PID" ]; then
-        kill $GUNICORN_PID 2>/dev/null
+        kill "$GUNICORN_PID" 2>/dev/null || true
+        wait "$GUNICORN_PID" 2>/dev/null || true
     fi
     if [ ! -z "$MQTT_PID" ]; then
-        kill $MQTT_PID 2>/dev/null
+        kill "$MQTT_PID" 2>/dev/null || true
+        wait "$MQTT_PID" 2>/dev/null || true
     fi
-    exit 0
+    if [ ! -z "$TELEGRAM_PID" ]; then
+        kill "$TELEGRAM_PID" 2>/dev/null || true
+        wait "$TELEGRAM_PID" 2>/dev/null || true
+    fi
 }
 
 # Capturar señales para limpieza
-trap cleanup SIGTERM SIGINT
+trap 'cleanup; exit 0' SIGTERM SIGINT
 
 # Iniciar Gunicorn solo si no se debe omitir
 if [ "$SKIP_GUNICORN" != "true" ]; then
@@ -193,11 +219,7 @@ if [ "$SKIP_GUNICORN" != "true" ]; then
     fi
 else
     echo "⏭️ Saltando inicio de Gunicorn (ya está funcionando)"
-    # Buscar PID de Gunicorn existente para el monitoreo
-    GUNICORN_PID=$(pgrep -f "gunicorn.*home_control" | head -1)
-    if [ ! -z "$GUNICORN_PID" ]; then
-        echo "✅ Usando Gunicorn existente (PID: $GUNICORN_PID)"
-    fi
+    GUNICORN_PID=""
     sleep 2
 fi
 
@@ -210,36 +232,66 @@ MQTT_PID=$!
 
 echo "✅ MQTT Bridge iniciado (PID: $MQTT_PID)"
 
-# Verificar que ambos procesos están funcionando
-if ! kill -0 $GUNICORN_PID 2>/dev/null; then
+# Iniciar el bot interactivo si está configurado.
+TELEGRAM_PID=""
+if [ "$START_TELEGRAM" = "true" ]; then
+    if python "$DJANGO_DIR/manage.py" shell -c "from django.conf import settings; import sys; sys.exit(0 if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID_WHITELIST else 1)" >/dev/null 2>&1; then
+        echo "📨 Iniciando bot de Telegram..."
+        python "$DJANGO_DIR/manage.py" telegram_bot &
+        TELEGRAM_PID=$!
+        echo "✅ Bot de Telegram iniciado (PID: $TELEGRAM_PID)"
+    else
+        echo "⚠️ Bot de Telegram omitido: configura TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID_WHITELIST"
+    fi
+fi
+
+# Verificar que los procesos iniciados están funcionando
+if [ "$SKIP_GUNICORN" != "true" ] && ! kill -0 "$GUNICORN_PID" 2>/dev/null; then
     echo "❌ Error: Gunicorn no está funcionando"
     cleanup
     exit 1
 fi
 
-if ! kill -0 $MQTT_PID 2>/dev/null; then
+if ! kill -0 "$MQTT_PID" 2>/dev/null; then
     echo "❌ Error: MQTT Bridge no está funcionando"
     cleanup
     exit 1
 fi
 
+if [ -n "$TELEGRAM_PID" ] && ! kill -0 "$TELEGRAM_PID" 2>/dev/null; then
+    echo "❌ Error: El bot de Telegram no está funcionando"
+    cleanup
+    exit 1
+fi
+
 echo "🎉 Todos los servicios iniciados correctamente:"
-echo "   - Django Backend (Gunicorn): PID $GUNICORN_PID"
+if [ "$SKIP_GUNICORN" != "true" ]; then
+    echo "   - Django Backend (Gunicorn): PID $GUNICORN_PID"
+fi
 echo "   - MQTT Bridge: PID $MQTT_PID"
+if [ -n "$TELEGRAM_PID" ]; then
+    echo "   - Telegram Bot: PID $TELEGRAM_PID"
+fi
 echo "   - Presiona Ctrl+C para detener todos los servicios"
 
 # Mantener el script ejecutándose y monitorear los procesos
 while true; do
     # Verificar que Gunicorn sigue funcionando
-    if ! kill -0 $GUNICORN_PID 2>/dev/null; then
+    if [ "$SKIP_GUNICORN" != "true" ] && ! kill -0 "$GUNICORN_PID" 2>/dev/null; then
         echo "❌ Gunicorn se detuvo inesperadamente"
         cleanup
         exit 1
     fi
     
     # Verificar que MQTT Bridge sigue funcionando
-    if ! kill -0 $MQTT_PID 2>/dev/null; then
+    if ! kill -0 "$MQTT_PID" 2>/dev/null; then
         echo "❌ MQTT Bridge se detuvo inesperadamente"
+        cleanup
+        exit 1
+    fi
+
+    if [ -n "$TELEGRAM_PID" ] && ! kill -0 "$TELEGRAM_PID" 2>/dev/null; then
+        echo "❌ El bot de Telegram se detuvo inesperadamente"
         cleanup
         exit 1
     fi
