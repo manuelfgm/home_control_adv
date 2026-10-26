@@ -8,8 +8,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from actuators.models import ActuatorStatus
-from sensors.models import SensorReading
 from .models import HeatingSchedule, HeatingSettings
+from .status import build_heating_status_message
 
 
 logger = logging.getLogger(__name__)
@@ -91,37 +91,7 @@ class TelegramHeatingBot:
         )
 
     def _send_current_status(self, chat_id):
-        reading = SensorReading.objects.filter(
-            temperature__isnull=False,
-            sensor_error=False,
-        ).order_by('-created_at').first()
-        active_schedule = HeatingSchedule.get_current_active_schedule()
-        target_temperature = (
-            active_schedule.target_temperature
-            if active_schedule
-            else HeatingSchedule.get_current_target_temperature()
-        )
-
-        current_temperature = (
-            f'{reading.temperature:g} °C' if reading else 'Sin datos'
-        )
-        humidity = (
-            f'{reading.humidity:g} %'
-            if reading and reading.humidity is not None
-            else 'Sin datos'
-        )
-        program = active_schedule.name if active_schedule else 'Ninguno'
-        if active_schedule is None:
-            program += ' (temperatura por defecto)'
-
-        self._send_message(
-            chat_id,
-            'Estado de calefaccion:\n'
-            f'Temperatura: {current_temperature}\n'
-            f'Humedad: {humidity}\n'
-            f'Temperatura objetivo: {target_temperature:g} °C\n'
-            f'Programa activo: {program}',
-        )
+        self._send_message(chat_id, build_heating_status_message())
 
     def _handle_callback(self, callback):
         message = callback.get('message') or {}
@@ -217,9 +187,7 @@ class TelegramHeatingBot:
         current_schedule = 'Si' if schedule.is_active_now() else 'No'
         settings = HeatingSettings.get_current_settings()
         system_status = 'activado' if settings and settings.is_active else 'desactivado'
-        actuator = ActuatorStatus.objects.filter(actuator_id='boiler').order_by(
-            '-created_at', '-pk'
-        ).first()
+        actuator = ActuatorStatus.objects.order_by('-created_at', '-pk').first()
         if actuator:
             boiler_status = 'encendida' if actuator.is_heating else 'apagada'
             reported_at = timezone.localtime(actuator.created_at).strftime('%d/%m %H:%M')

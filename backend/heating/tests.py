@@ -3,11 +3,16 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 
 from actuators.models import ActuatorStatus
+from actuators.notifications import notify_heating_change
+from sensors.models import SensorReading
 from .models import HeatingSchedule
 from .telegram_bot import TelegramHeatingBot
 
 
-@override_settings(TELEGRAM_CHAT_ID_WHITELIST=['12345'])
+@override_settings(
+	TELEGRAM_BOT_TOKEN='test-token',
+	TELEGRAM_CHAT_ID_WHITELIST=['12345'],
+)
 class TelegramHeatingBotTests(TestCase):
 	def setUp(self):
 		self.bot = TelegramHeatingBot('test-token', ['12345'])
@@ -110,9 +115,9 @@ class TelegramHeatingBotTests(TestCase):
 			{'name': 'Mañanas', 'target_temperature': 20.0},
 		)()
 		with (
-			patch('heating.telegram_bot.SensorReading.objects.filter') as readings,
+			patch('heating.status.SensorReading.objects.filter') as readings,
 			patch(
-				'heating.telegram_bot.HeatingSchedule.get_current_active_schedule',
+				'heating.status.HeatingSchedule.get_current_active_schedule',
 				return_value=active_schedule,
 			),
 		):
@@ -122,23 +127,25 @@ class TelegramHeatingBotTests(TestCase):
 		self.assertEqual(
 			post.call_args.kwargs['json']['text'],
 			'Estado de calefaccion:\n'
+			'Caldera: Sin reporte\n'
 			'Temperatura: 19.5 °C\n'
 			'Humedad: 48.2 %\n'
 			'Temperatura objetivo: 20 °C\n'
-			'Programa activo: Mañanas',
+			'Programa activo: Mañanas\n'
+			'Ultimo reporte: Sin datos',
 		)
 
 	@patch('heating.telegram_bot.requests.post')
 	def test_status_command_without_reading_reports_default_target(self, post):
 		post.return_value.json.return_value = {'ok': True}
 		with (
-			patch('heating.telegram_bot.SensorReading.objects.filter') as readings,
+			patch('heating.status.SensorReading.objects.filter') as readings,
 			patch(
-				'heating.telegram_bot.HeatingSchedule.get_current_active_schedule',
+				'heating.status.HeatingSchedule.get_current_active_schedule',
 				return_value=None,
 			),
 			patch(
-				'heating.telegram_bot.HeatingSchedule.get_current_target_temperature',
+				'heating.status.HeatingSchedule.get_current_target_temperature',
 				return_value=16.0,
 			),
 		):
@@ -148,10 +155,45 @@ class TelegramHeatingBotTests(TestCase):
 		self.assertEqual(
 			post.call_args.kwargs['json']['text'],
 			'Estado de calefaccion:\n'
+			'Caldera: Sin reporte\n'
 			'Temperatura: Sin datos\n'
 			'Humedad: Sin datos\n'
 			'Temperatura objetivo: 16 °C\n'
-			'Programa activo: Ninguno (temperatura por defecto)',
+			'Programa activo: Ninguno (temperatura por defecto)\n'
+			'Ultimo reporte: Sin datos',
+		)
+
+	@patch('requests.post')
+	def test_status_command_and_transition_notification_send_same_message(
+		self,
+		post,
+	):
+		post.return_value.json.return_value = {'ok': True}
+		actuator_status = ActuatorStatus.objects.create(
+			actuator_id='caldera',
+			is_heating=True,
+			temperature=20.5,
+		)
+		SensorReading.objects.bulk_create([
+			SensorReading(
+				sensor_id='livingroom',
+				temperature=19.5,
+				humidity=48.2,
+			),
+		])
+
+		self.update('/estado')
+		notify_heating_change(actuator_status)
+
+		status_message = post.call_args_list[0].kwargs['json']['text']
+		self.assertIn('Caldera: Encendida', status_message)
+		self.assertIn(
+			'Temperatura devuelta por actuador (comando): 20.5 °C',
+			status_message,
+		)
+		self.assertEqual(
+			status_message,
+			post.call_args_list[1].kwargs['json']['text'],
 		)
 
 	@patch('heating.telegram_bot.requests.post')
@@ -223,7 +265,7 @@ class TelegramHeatingBotTests(TestCase):
 	@patch('heating.telegram_bot.requests.post')
 	def test_schedule_detail_shows_last_reported_boiler_state(self, post):
 		post.return_value.json.return_value = {'ok': True}
-		ActuatorStatus.objects.create(actuator_id='boiler', is_heating=True)
+		ActuatorStatus.objects.create(actuator_id='caldera', is_heating=True)
 
 		self.callback(f'schedule:select:{self.schedule.pk}')
 

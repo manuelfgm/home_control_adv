@@ -53,8 +53,11 @@ Los cambios de estado recibidos del actuador en `/actuators/api/status/`
 envían un aviso mediante la [API oficial de Telegram](https://core.telegram.org/bots/api#sendmessage).
 Se compara `is_heating` con el último estado del mismo `actuator_id`:
 el primer registro y los estados repetidos no envían mensajes. El aviso incluye
-el encendido o apagado, el identificador del actuador y la fecha de recepción local.
-Los comandos enviados a la caldera no generan avisos hasta recibir su estado.
+el mismo resumen que `/estado`: estado de la caldera, temperatura y humedad del
+sensor, temperatura objetivo, programa activo, temperatura devuelta por el
+actuador y hora de su último reporte. La temperatura del actuador es el valor
+que devuelve del comando recibido; no es una medición suya. Los comandos
+enviados a la caldera no generan avisos hasta recibir su estado.
 
 1. Crea un bot con `@BotFather` usando `/newbot` y guarda su token en el archivo `.env` local, nunca en Git.
 2. Cada usuario que vaya a controlar la calefacción debe abrir una conversación privada con el bot y enviar `/start`. Los grupos pueden recibir avisos, pero no se permiten comandos de control en ellos.
@@ -73,10 +76,10 @@ controlar horarios. En chats privados, `message.chat.id` coincide con el ID del
 usuario. No son números de móvil. Nunca publiques el token ni la respuesta de
 `getUpdates`.
 
-Una vez iniciado el servicio, abre el bot y envía `/estado` para consultar la
-última temperatura y humedad medidas, la temperatura objetivo y el programa
-activo en ese momento. Si no hay una lectura válida o un programa en curso, el
-bot lo indicará. Envía `/programas` para ver los horarios registrados y si están
+Una vez iniciado el servicio, abre el bot y envía `/estado` para consultar el
+estado de la caldera, la última temperatura y humedad medidas, la temperatura
+objetivo y el programa activo en ese momento. Si no hay una lectura válida o un
+reporte del actuador, el bot lo indicará. Envía `/programas` para ver los horarios registrados y si están
 activados o desactivados. Selecciona uno para ver sus detalles y activar o
 desactivar el horario. Activar un horario solo lo habilita para su franja; no
 fuerza la caldera a encenderse fuera de ella. Los solapamientos con otros

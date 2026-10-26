@@ -1,7 +1,7 @@
 from unittest.mock import Mock, patch
 
 import requests
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
@@ -87,7 +87,7 @@ class HeatingChangeTests(TestCase):
 	TELEGRAM_BOT_TOKEN='test-token',
 	TELEGRAM_CHAT_ID_WHITELIST=['123', '-456', '123'],
 )
-class TelegramNotificationTests(SimpleTestCase):
+class TelegramNotificationTests(TestCase):
 	def setUp(self):
 		self.status = ActuatorStatus(actuator_id='boiler', is_heating=True)
 
@@ -115,7 +115,13 @@ class TelegramNotificationTests(SimpleTestCase):
 						'json': {
 							'chat_id': '123',
 							'text': (
-								f'Calefaccion {text}\nActuador: boiler\nFecha: '
+								f'Estado de calefaccion:\n'
+								f'Caldera: {"Encendida" if state else "Apagada"}\n'
+								f'Temperatura: Sin datos\n'
+								f'Humedad: Sin datos\n'
+								f'Temperatura objetivo: 16 °C\n'
+								f'Programa activo: Ninguno (temperatura por defecto)\n'
+								f'Ultimo reporte: '
 								f'{received_at:%d/%m/%Y %H:%M:%S %Z}'
 							),
 						},
@@ -130,7 +136,7 @@ class TelegramNotificationTests(SimpleTestCase):
 		self.status.temperature = 21.5
 		notify_heating_change(self.status)
 		self.assertIn(
-			'Temperatura recibida: 21.5 °C\n',
+			'Temperatura devuelta por actuador (comando): 21.5 °C\n',
 			post.call_args.kwargs['json']['text'],
 		)
 
@@ -140,7 +146,10 @@ class TelegramNotificationTests(SimpleTestCase):
 		post.return_value.json.return_value = {'ok': True}
 		self.status.temperature = None
 		notify_heating_change(self.status)
-		self.assertNotIn('Temperatura', post.call_args.kwargs['json']['text'])
+		self.assertNotIn(
+			'Temperatura devuelta por actuador',
+			post.call_args.kwargs['json']['text'],
+		)
 
 	@override_settings(TELEGRAM_BOT_TOKEN='')
 	@patch('actuators.notifications.requests.post')

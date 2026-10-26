@@ -2,7 +2,8 @@ import logging
 
 import requests
 from django.conf import settings
-from django.utils import timezone
+
+from heating.status import build_heating_status_message
 
 
 logger = logging.getLogger(__name__)
@@ -14,16 +15,7 @@ def notify_heating_change(actuator_status):
     if not token or not chat_ids:
         return
 
-    state = 'encendida' if actuator_status.is_heating else 'apagada'
-    received_at = timezone.localtime(actuator_status.created_at)
-    message = (
-        f'Calefaccion {state}\n'
-        f'Actuador: {actuator_status.actuator_id}\n'
-    )
-    if actuator_status.temperature is not None:
-        # El actuador no mide: devuelve la temperatura que recibio en el comando.
-        message += f'Temperatura recibida: {actuator_status.temperature:g} °C\n'
-    message += f'Fecha: {received_at:%d/%m/%Y %H:%M:%S %Z}'
+    message = build_heating_status_message(actuator_status)
     for chat_id in dict.fromkeys(chat_ids):
         try:
             response = requests.post(
