@@ -8,6 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from actuators.models import ActuatorStatus
+from sensors.models import SensorReading
 from .models import HeatingSchedule, HeatingSettings
 
 
@@ -79,8 +80,43 @@ class TelegramHeatingBot:
         elif command == '/ayuda':
             self._send_message(
                 chat['id'],
-                'Usa /programas para consultar y activar o desactivar horarios.',
+                'Usa /estado para ver la calefaccion y /programas para gestionar horarios.',
             )
+        elif command == '/estado':
+            self._send_current_status(chat['id'])
+
+    def _send_current_status(self, chat_id):
+        reading = SensorReading.objects.filter(
+            temperature__isnull=False,
+            sensor_error=False,
+        ).order_by('-created_at').first()
+        active_schedule = HeatingSchedule.get_current_active_schedule()
+        target_temperature = (
+            active_schedule.target_temperature
+            if active_schedule
+            else HeatingSchedule.get_current_target_temperature()
+        )
+
+        current_temperature = (
+            f'{reading.temperature:g} °C' if reading else 'Sin datos'
+        )
+        humidity = (
+            f'{reading.humidity:g} %'
+            if reading and reading.humidity is not None
+            else 'Sin datos'
+        )
+        program = active_schedule.name if active_schedule else 'Ninguno'
+        if active_schedule is None:
+            program += ' (temperatura por defecto)'
+
+        self._send_message(
+            chat_id,
+            'Estado de calefaccion:\n'
+            f'Temperatura: {current_temperature}\n'
+            f'Humedad: {humidity}\n'
+            f'Temperatura objetivo: {target_temperature:g} °C\n'
+            f'Programa activo: {program}',
+        )
 
     def _handle_callback(self, callback):
         message = callback.get('message') or {}

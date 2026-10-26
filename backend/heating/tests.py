@@ -64,6 +64,60 @@ class TelegramHeatingBotTests(TestCase):
 		post.assert_not_called()
 
 	@patch('heating.telegram_bot.requests.post')
+	def test_status_command_returns_sensor_and_active_program(self, post):
+		post.return_value.json.return_value = {'ok': True}
+		reading = type('Reading', (), {'temperature': 19.5, 'humidity': 48.2})()
+		active_schedule = type(
+			'Schedule',
+			(),
+			{'name': 'Mañanas', 'target_temperature': 20.0},
+		)()
+		with (
+			patch('heating.telegram_bot.SensorReading.objects.filter') as readings,
+			patch(
+				'heating.telegram_bot.HeatingSchedule.get_current_active_schedule',
+				return_value=active_schedule,
+			),
+		):
+			readings.return_value.order_by.return_value.first.return_value = reading
+			self.update('/estado')
+
+		self.assertEqual(
+			post.call_args.kwargs['json']['text'],
+			'Estado de calefaccion:\n'
+			'Temperatura: 19.5 °C\n'
+			'Humedad: 48.2 %\n'
+			'Temperatura objetivo: 20 °C\n'
+			'Programa activo: Mañanas',
+		)
+
+	@patch('heating.telegram_bot.requests.post')
+	def test_status_command_without_reading_reports_default_target(self, post):
+		post.return_value.json.return_value = {'ok': True}
+		with (
+			patch('heating.telegram_bot.SensorReading.objects.filter') as readings,
+			patch(
+				'heating.telegram_bot.HeatingSchedule.get_current_active_schedule',
+				return_value=None,
+			),
+			patch(
+				'heating.telegram_bot.HeatingSchedule.get_current_target_temperature',
+				return_value=16.0,
+			),
+		):
+			readings.return_value.order_by.return_value.first.return_value = None
+			self.update('/estado')
+
+		self.assertEqual(
+			post.call_args.kwargs['json']['text'],
+			'Estado de calefaccion:\n'
+			'Temperatura: Sin datos\n'
+			'Humedad: Sin datos\n'
+			'Temperatura objetivo: 16 °C\n'
+			'Programa activo: Ninguno (temperatura por defecto)',
+		)
+
+	@patch('heating.telegram_bot.requests.post')
 	def test_select_schedule_shows_current_status_and_activate_button(self, post):
 		post.return_value.json.return_value = {'ok': True}
 

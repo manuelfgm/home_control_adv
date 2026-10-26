@@ -73,12 +73,14 @@ controlar horarios. En chats privados, `message.chat.id` coincide con el ID del
 usuario. No son números de móvil. Nunca publiques el token ni la respuesta de
 `getUpdates`.
 
-Una vez iniciado el servicio de abajo, abre el bot y envía `/programas`. Verás
-los horarios registrados y si están activados o desactivados. Selecciona uno para
-ver sus días, franja horaria, temperatura, estado del sistema y último estado
-reportado por la caldera; el botón permite activarlo o desactivarlo. Activar un
-horario solo lo habilita para su franja: no fuerza la caldera a encenderse fuera
-de ella. Los solapamientos con otros horarios activos se rechazan.
+Una vez iniciado el servicio, abre el bot y envía `/estado` para consultar la
+última temperatura y humedad medidas, la temperatura objetivo y el programa
+activo en ese momento. Si no hay una lectura válida o un programa en curso, el
+bot lo indicará. Envía `/programas` para ver los horarios registrados y si están
+activados o desactivados. Selecciona uno para ver sus detalles y activar o
+desactivar el horario. Activar un horario solo lo habilita para su franja; no
+fuerza la caldera a encenderse fuera de ella. Los solapamientos con otros
+horarios activos se rechazan.
 
 El bot interactivo se inicia junto con Gunicorn y el bridge MQTT mediante
 `start_backend.sh`, siempre que `TELEGRAM_BOT_TOKEN` y
