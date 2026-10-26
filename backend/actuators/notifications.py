@@ -19,8 +19,11 @@ def notify_heating_change(actuator_status):
     message = (
         f'Calefaccion {state}\n'
         f'Actuador: {actuator_status.actuator_id}\n'
-        f'Fecha: {received_at:%d/%m/%Y %H:%M:%S %Z}'
     )
+    if actuator_status.temperature is not None:
+        # El actuador no mide: devuelve la temperatura que recibio en el comando.
+        message += f'Temperatura recibida: {actuator_status.temperature:g} °C\n'
+    message += f'Fecha: {received_at:%d/%m/%Y %H:%M:%S %Z}'
     for chat_id in dict.fromkeys(chat_ids):
         try:
             response = requests.post(

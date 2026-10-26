@@ -123,6 +123,25 @@ class TelegramNotificationTests(SimpleTestCase):
 					}),
 				)
 
+	@override_settings(TELEGRAM_CHAT_ID_WHITELIST=['123'])
+	@patch('actuators.notifications.requests.post')
+	def test_notify_includes_temperature_received_by_actuator(self, post):
+		post.return_value.json.return_value = {'ok': True}
+		self.status.temperature = 21.5
+		notify_heating_change(self.status)
+		self.assertIn(
+			'Temperatura recibida: 21.5 °C\n',
+			post.call_args.kwargs['json']['text'],
+		)
+
+	@override_settings(TELEGRAM_CHAT_ID_WHITELIST=['123'])
+	@patch('actuators.notifications.requests.post')
+	def test_notify_without_temperature_omits_line(self, post):
+		post.return_value.json.return_value = {'ok': True}
+		self.status.temperature = None
+		notify_heating_change(self.status)
+		self.assertNotIn('Temperatura', post.call_args.kwargs['json']['text'])
+
 	@override_settings(TELEGRAM_BOT_TOKEN='')
 	@patch('actuators.notifications.requests.post')
 	def test_notify_missing_token_does_not_send(self, post):
